@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+:root {
+  --bg: #F3EEE6;
+  --panel: #FBF8F3;
+  --line: #DDD5C8;
+  --ink: #292929;
+  --ink2: #454140;
+  --muted: #66615C;
+  --tert: #99938B;
+  --accent: #C96A2F;
+  --accent-dark: #C1622B;
+  --film: #292929;
+  --strip: 108px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font-family: 'Archivo', system-ui, sans-serif; overflow: hidden; }
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stage { position: relative; height: calc(100% - var(--strip)); overflow: hidden; }
+.frame { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(260px, 0.8fr) 1.2fr;
+  gap: 48px; align-items: safe center; padding: 32px 56px; opacity: 0; visibility: hidden; overflow-y: auto;
+  transform: translateX(40px); transition: opacity .45s ease, transform .45s ease, visibility .45s; }
+.frame.active { opacity: 1; visibility: visible; transform: none; }
+.frame.before { transform: translateX(-40px); }
+@media (prefers-reduced-motion: reduce) { .frame { transition: none; transform: none; } }
+
+h1, h2 { font-stretch: 122%; font-weight: 750; letter-spacing: -0.015em; margin: 0 0 16px 0; line-height: 1.02; }
+h2 { font-size: clamp(30px, 3.4vw, 46px); }
+.copy p { font-size: 17px; line-height: 1.6; color: var(--ink); max-width: 30em; margin: 0 0 12px 0; }
+.copy .live { color: var(--muted); font-size: 15px; }
+.copy .live b { color: var(--ink); font-weight: 600; }
+.viz { width: 100%; height: 100%; min-height: 0; position: relative; display: flex; align-items: center; }
+.viz svg { display: block; overflow: visible; }
+svg text { font-family: 'Archivo', system-ui, sans-serif; fill: var(--ink); }
+.axis text { fill: var(--muted); font-size: 12px; }
+.axis line, .axis path { stroke: var(--line); }
+
+/* opening frame */
+.opening { grid-template-columns: 1fr; padding: 0; }
+.wall { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 1fr;
+  gap: 3px; opacity: .9; }
+.wall a { display: block; background: var(--panel); overflow: hidden; }
+.wall img { width: 100%; height: 100%; object-fit: cover; display: block; color: transparent; font-size: 0; }
+.opening-copy { position: relative; padding: 0 56px; max-width: 1000px;
+  background: linear-gradient(90deg, rgba(243,238,230,.97) 70%, rgba(243,238,230,.6) 88%, rgba(243,238,230,0)); align-self: stretch;
+  display: flex; flex-direction: column; justify-content: center; }
+.opening-copy .q { font-size: 20px; color: var(--muted); margin-bottom: 8px; }
+.opening-copy h1 { font-size: clamp(52px, 8vw, 112px); margin-bottom: 22px; }
+.opening-copy p { font-size: 19px; line-height: 1.55; max-width: 31em; margin: 0 0 28px 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 30px; }
+.fact { padding: 0 26px 0 0; margin-right: 26px; border-right: 1px solid var(--line); }
+.fact:last-child { border-right: 0; }
+.fact b { display: block; font-size: 28px; font-weight: 650; font-stretch: 112%; }
+.fact span { font-size: 13px; color: var(--muted); }
+.begin:hover { background: var(--accent-dark); }
+.begin { align-self: flex-start; background: var(--accent); color: #FFFFFF; border: 0; border-radius: 4px;
+  font-size: 16px; font-weight: 650; padding: 12px 20px; cursor: pointer; }
+.hint { font-size: 13px; color: var(--muted); margin-top: 12px; }
+
+/* orientation frames */
+.shape-label { font-size: 13px; fill: var(--muted); }
+.big-num { font-stretch: 118%; font-weight: 700; }
+
+/* model frame */
+.controls { display: flex; flex-direction: column; gap: 22px; }
+.control-label { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+.choices { display: flex; gap: 8px; flex-wrap: wrap; }
+.choice { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 4px;
+  padding: 9px 14px; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 9px; }
+.choice[aria-pressed="true"] { border-color: var(--accent); background: rgba(201,106,47,.10); color: var(--accent-dark); }
+.choice .shape { border: 1.5px solid currentColor; display: inline-block; }
+.range-row { display: flex; align-items: center; gap: 14px; }
+.range-row output { font-size: 18px; font-weight: 600; min-width: 44px; font-stretch: 110%; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: var(--line);
+  border-radius: 2px; outline-offset: 6px; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; }
+input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--accent); }
+.meter-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 28px 30px; width: 100%; }
+.meter-pct { font-size: clamp(60px, 7vw, 96px); font-weight: 750; font-stretch: 125%; line-height: 1; }
+.meter-sub { color: var(--muted); font-size: 15px; margin: 6px 0 22px 0; }
+.note { font-size: 14px; color: var(--muted); line-height: 1.55; margin-top: 18px; }
+.note b { color: var(--ink); font-weight: 600; }
+
+/* camera basics */
+.dials { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+.dial-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.dial-top label { font-size: 15px; font-weight: 600; }
+.dial-top output { font-size: 20px; font-weight: 700; font-stretch: 115%; color: var(--accent-dark); }
+.dial p { font-size: 14px !important; line-height: 1.5 !important; color: var(--muted) !important; margin: 8px 0 0 0 !important; }
+.dial p b { color: var(--ink); font-weight: 600; }
+.scene-wrap { width: 100%; }
+.scene { width: 100%; height: auto; display: block; border-radius: 6px; background: #E2D9CC; }
+.exposure { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.exposure .tag { font-size: 15px; font-weight: 650; min-width: 120px; }
+.ride { animation: ride 7s linear infinite; }
+@keyframes ride { from { transform: translateX(-90px); } to { transform: translateX(700px); } }
+@media (prefers-reduced-motion: reduce) { .ride { animation: none; transform: translateX(400px); } }
+.basic-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+
+/* model */
+.lead-sm { font-size: 16px !important; color: var(--ink2, #454140) !important; }
+.step { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 650; margin: 18px 0 12px 0; }
+.step .num { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center; }
+.path { list-style: none; padding: 0; margin: 0; counter-reset: q; }
+.path li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0;
+  border-bottom: 1px solid var(--line); font-size: 14px; counter-increment: q; }
+.path li::before { content: counter(q); font-size: 12px; color: var(--tert); width: 14px; flex: none; }
+.path li span.q { flex: 1; }
+.path li span.a { font-weight: 650; padding: 2px 10px; border-radius: 3px; font-size: 13px; }
+.path li span.yes { background: rgba(201,106,47,.12); color: var(--accent-dark); }
+.path li span.no { background: #EAE3D8; color: var(--muted); }
+
+/* tooltip */
+.tip { position: absolute; pointer-events: none; background: #292929; border: 0; color: #FFFFFF;
+  font-size: 13px; padding: 8px 10px; border-radius: 4px; max-width: 240px; line-height: 1.4; opacity: 0;
+  transition: opacity .12s; z-index: 10; }
+
+/* film strip */
+.strip { height: var(--strip); background: var(--film); display: flex; align-items: stretch; position: relative;
+  border-top: 0; }
+.strip::before, .strip::after { content: ""; position: absolute; left: 0; right: 0; height: 8px;
+  background: repeating-linear-gradient(90deg, transparent 0 10px, #F3EEE6 10px 20px); opacity: .16; }
+.strip::before { top: 6px; } .strip::after { bottom: 6px; }
+.nav { width: 64px; background: transparent; border: 0; color: #99938B; font-size: 26px; cursor: pointer; }
+.nav:hover { color: #FFFFFF; }
+.thumbs { flex: 1; display: flex; gap: 6px; padding: 22px 0; overflow-x: auto; scrollbar-width: none; }
+.thumb { flex: 1 1 0; min-width: 96px; background: #3A3735; border: 1px solid transparent; border-radius: 3px; color: #C8C3BC;
+  text-align: left; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; justify-content: space-between; }
+.thumb .n { font-size: 11px; font-stretch: 75%; color: #D97B3F; }
+.thumb .t { font-size: 13px; line-height: 1.2; }
+.thumb[aria-current="true"] { border-color: #D97B3F; color: #FFFFFF; background: #454140; }
+
+@media (max-width: 820px) {
+  .frame { display: block; padding: 24px 22px 40px 22px; overflow-y: auto; }
+  .frame > .viz { height: auto; min-height: 340px; margin-top: 22px; }
+  .opening { padding: 0; }
+  .opening-copy { padding: 28px 22px 40px 22px; background: rgba(243,238,230,.93); min-height: 100%; justify-content: flex-start; }
+  .wall { position: fixed; grid-template-columns: repeat(4, 1fr); }
+  .facts { gap: 14px 0; }
+  .fact { flex: 1 0 45%; border-right: 0; margin-right: 0; }
+}
+</style>
+</head>
+<body>
+<nav class="strip" aria-label="Story frames">
+  <button class="nav" id="prev" aria-label="Previous frame">&#8249;</button>
+  <div class="thumbs" id="thumbs"></div>
+  <button class="nav" id="next" aria-label="Next frame">&#8250;</button>
+</nav>
+<div class="stage" id="stage"></div>
+<div class="tip" id="tip"></div>
+
+<script>
+const DATA = /*DATA*/null;
+const C = { accent: "#C96A2F", accentDark: "#C1622B", ink: "#292929", ink2: "#454140", muted: "#66615C", tert: "#99938B", pale: "#DDD5C8", soft: "#C8C3BC", grid: "#E4DCCF", good: "#5F7A4A", bad: "#A6412B", panel: "#FBF8F3" };
+const deviceColor = { camera: C.ink2, phone: C.accent, drone: C.tert, unknown: C.soft };
+const fmt = d3.format(",");
+const pct = v => v.toFixed(2) + "%";
+
+const frames = [
+  { id: "opening", short: "The question" },
+  { id: "device", short: "Phones vs cameras" },
+  { id: "brands", short: "Who shoots" },
+  { id: "orientation", short: "Landscape wins" },
+  { id: "share", short: "A few take most" },
+  { id: "time", short: "The head start" },
+  { id: "basics", short: "Camera basics" },
+  { id: "settings", short: "How they shoot" },
+  { id: "model", short: "Take the shot" },
+];
+
+const stage = document.getElementById("stage");
+const tip = document.getElementById("tip");
+
+function showTip(ev, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const x = Math.min(ev.clientX + 14, window.innerWidth - 260);
+  tip.style.left = x + "px"; tip.style.top = (ev.clientY + 14) + "px";
+}
+function hideTip() { tip.style.opacity = 0; }
+
+/* ---------- frame markup ---------- */
+function frameHTML(f) {
+  const d = DATA;
+  if (f.id === "opening") {
+    const wall = d.photos.slice(0, 32).map(p =>
+      `<a href="${p.url}" target="_blank" rel="noopener" aria-label="${p.desc}"><img src="${p.img}" alt="" loading="lazy"></a>`).join("");
+    return `<div class="wall" aria-hidden="false">${wall}</div>
+    <div class="opening-copy">
+      <div class="q">What makes a photo popular?</div>
+      <h1>Not the camera.</h1>
+      <p>Across ${fmt(d.total)} Unsplash photos, shots from phones and pro cameras get downloaded at almost the same rate.
+      What changes the odds is how the photo is framed and when it was uploaded.</p>
+      <div class="facts">
+        <div class="fact"><b>${fmt(d.n)}</b><span>photos in your selection</span></div>
+        <div class="fact"><b>${fmt(d.median_views)}</b><span>median views</span></div>
+        <div class="fact"><b>${fmt(d.median_downloads)}</b><span>median downloads</span></div>
+        <div class="fact"><b>${pct(d.median_rate)}</b><span>of viewers download</span></div>
+      </div>
+      <button class="begin" data-go="1">Start the roll</button>
+      <div class="hint">Move through the frames with the strip above or your arrow keys. The photos behind link to Unsplash.</div>
+    </div>`;
+  }
+  if (f.id === "device") {
+    const ph = d.device.find(x => x.name === "phone"), ca = d.device.find(x => x.name === "camera");
+    const live = ph && ca ? `In your selection: phones <b>${pct(ph.rate)}</b>, cameras <b>${pct(ca.rate)}</b>.` : `Add phones and cameras in the filters to compare them.`;
+    return `<div class="copy"><h2>Phones keep up with cameras</h2>
+      <p>Of every 1,000 people who view a photo, about 6 download it, whatever took the picture.</p>
+      <p>Phones are rare here, only 3% of photos, but the ones on Unsplash do just as well as camera shots.</p>
+      <p class="live">${live} The phone group is small, so a gap this size is noise.</p></div>
+      <div class="viz" id="viz-device"></div>`;
+  }
+  if (f.id === "orientation") {
+    return `<div class="copy"><h2>Landscape photos get downloaded more</h2>
+      <p>Horizontal photos convert about a quarter better than vertical ones.</p>
+      <p>The likely reason: people download them for website banners, slides and wallpapers, which are all wide.</p>
+      <p class="live">Each frame is drawn in its real shape, with the bar showing the share of viewers who download. Square photos are rare, so their number jumps around with the filters.</p></div>
+      <div class="viz" id="viz-orientation"></div>`;
+  }
+  if (f.id === "share") {
+    return `<div class="copy"><h2>A few photos take a big share of the downloads</h2>
+      <p>The typical photo gets a few thousand downloads, a handful get millions. That's why every number here is the median, not the average.</p>
+      <p class="live">In your selection, the top 1% of photos collect <b>${d.top1.toFixed(0)}%</b> of all downloads. The left column is those photos themselves, each tile sized by its downloads. Hover one to see it, click to open it.</p></div>
+      <div class="viz" id="viz-share"></div>`;
+  }
+  if (f.id === "time") {
+    return `<div class="copy"><h2>Older photos had a head start</h2>
+      <p>A photo from 2013 has had years to collect downloads, a 2020 photo much less.</p>
+      <p>Comparing raw downloads would reward age, not quality, so this story measures the share of viewers who download instead.</p>
+      <p class="live">Bars show median downloads by upload year. Hover a bar for the number of photos.</p></div>
+      <div class="viz" id="viz-time"></div>`;
+  }
+  if (f.id === "brands") {
+    return `<div class="copy"><h2>Who shoots Unsplash</h2>
+      <p>Unsplash is a home for dedicated photographers: most photos come from a handful of camera makers.</p>
+      <p>Dark bars are camera makers, grey bars drone makers, and orange bars phone makers. Phones barely make the list.</p>
+      <p class="live" id="brands-live"></p></div>
+      <div class="viz" id="viz-brands"></div>`;
+  }
+  if (f.id === "basics") {
+    return `<div class="copy"><h2>Three settings make every photo</h2>
+      <p>These three dials decide how much light the camera catches, and each one changes the look of the photo. Move them and watch the scene.</p>
+      <div class="dials">
+        <div class="dial"><div class="dial-top"><label for="k-iso">ISO</label><output id="v-iso"></output></div>
+          <input type="range" id="k-iso" min="0" max="7" step="1"><p id="x-iso"></p></div>
+        <div class="dial"><div class="dial-top"><label for="k-ap">Aperture</label><output id="v-ap"></output></div>
+          <input type="range" id="k-ap" min="0" max="7" step="1"><p id="x-ap"></p></div>
+        <div class="dial"><div class="dial-top"><label for="k-sh">Shutter speed</label><output id="v-sh"></output></div>
+          <input type="range" id="k-sh" min="0" max="9" step="1"><p id="x-sh"></p></div>
+      </div>
+</div>
+      <div class="viz" style="flex-direction:column;align-items:stretch;justify-content:center"><div class="scene-wrap">${sceneSVG()}
+        <div class="exposure"><span class="tag" id="exp-tag">Balanced</span><svg id="exp-scale" width="100%" height="44"></svg></div>
+        <div class="basic-buttons"><button class="choice" id="b-common">Back to the most common Unsplash settings</button></div></div></div>`;
+  }
+  if (f.id === "settings") {
+    return `<div class="copy"><h2>How the photographers shoot</h2>
+      <p>These are the three dials from Camera basics. Most photos use "safe" settings: low ISO for clean images, a wide aperture, and a fast shutter.</p>
+      <p class="live">Phones record a focal length of about <b>${d.focal.phone ?? "4"} mm</b> and cameras about <b>${d.focal.camera ?? "50"} mm</b>,
+      yet both look like normal wide shots. Phone sensors are about 6 times smaller, so their numbers can't be compared directly.</p></div>
+      <div class="viz" id="viz-settings"></div>`;
+  }
+  if (f.id === "model") {
+    return `<div class="copy">
+      <h2>Take the shot</h2>
+      <p class="lead-sm">A small machine learning model, a decision tree, studied all ${fmt(d.total)} photos.
+      Describe a photo and it estimates the chance that viewers will download it more often than the typical photo
+      (more than ${pct(d.overall_rate)} of viewers).</p>
+      <div class="step"><span class="num">1</span>Describe your photo</div>
+      <div class="controls">
+        <div><div class="control-label">Framing</div><div class="choices" id="c-orient">
+          <button class="choice" data-v="landscape"><span class="shape" style="width:24px;height:16px"></span>Landscape</button>
+          <button class="choice" data-v="portrait"><span class="shape" style="width:13px;height:20px"></span>Portrait</button>
+          <button class="choice" data-v="square"><span class="shape" style="width:17px;height:17px"></span>Square</button></div></div>
+        <div><div class="control-label">Taken with</div><div class="choices" id="c-device">
+          <button class="choice" data-v="camera">Camera</button>
+          <button class="choice" data-v="phone">Phone</button>
+          <button class="choice" data-v="drone">Drone</button></div></div>
+        <div><label class="control-label" for="c-year">Upload year</label>
+          <div class="range-row"><input type="range" id="c-year" min="2013" max="2025" step="1" value="2019"><output id="o-year">2019</output></div></div>
+        <div><label class="control-label" for="c-mp">Megapixels</label>
+          <div class="range-row"><input type="range" id="c-mp" min="1" max="100" step="1" value="20"><output id="o-mp">20</output></div></div>
+      </div>
+      <div class="note">How good is it? It's right <b>${d.model.test_acc.toFixed(1)}%</b> of the time on photos it never saw,
+      against 50% for a coin flip. Weak on purpose: these details explain only a little of what makes a photo popular.</div></div>
+      <div class="viz" style="flex-direction:column;align-items:stretch;justify-content:center">
+        <div class="meter-panel">
+          <div class="step" style="margin-top:0"><span class="num">2</span>Read the result</div>
+          <div class="meter-pct" id="m-pct">0%</div>
+          <div class="meter-sub">chance this photo gets downloaded more often than the typical photo</div>
+          <svg id="meter" width="100%" height="70"></svg>
+          <div class="step"><span class="num">3</span>See how the model decided</div>
+          <ol class="path" id="m-path"></ol>
+          <div class="note" id="m-leaf"></div>
+          <div class="note">Try switching the device: the number won't move, because the tree never asks about it.</div>
+        </div>
+      </div>`;
+  }
+}
+
+/* ---------- the camera basics scene ---------- */
+function sceneSVG() {
+  const lights = d3.range(16).map(i => {
+    const x = 30 + i * 38, y = 205 + Math.sin(i * 0.9) * 10;
+    return `<circle cx="${x}" cy="${y}" r="5" fill="#FFE6B8"/>`;
+  }).join("");
+  const trees = [[40, 300, 60], [95, 300, 85], [520, 300, 90], [575, 300, 70], [610, 300, 55]].map(([x, y, h]) =>
+    `<path d="M${x - h * 0.28},${y} L${x},${y - h} L${x + h * 0.28},${y} Z" fill="#4E5A4B"/>`).join("");
+  return `<svg class="scene" id="scene" viewBox="0 0 640 400" role="img" aria-label="A street scene at dusk with a person and a passing cyclist">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#5E6F88"/><stop offset="0.6" stop-color="#E3A77B"/><stop offset="1" stop-color="#F3CC9E"/></linearGradient>
+      <filter id="f-bg" x="-10%" y="-20%" width="120%" height="140%"><feGaussianBlur id="bg-blur" stdDeviation="0"/></filter>
+      <filter id="f-motion" x="-60%" y="-20%" width="220%" height="140%"><feGaussianBlur id="mo-blur" stdDeviation="0 0"/></filter>
+      <filter id="f-grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
+      <clipPath id="frame-clip"><rect width="640" height="400" rx="6"/></clipPath>
+    </defs>
+    <g clip-path="url(#frame-clip)">
+      <g id="scene-light">
+        <rect width="640" height="400" fill="url(#sky)"/>
+        <g filter="url(#f-bg)">
+          <circle cx="470" cy="236" r="38" fill="#F8DDB0"/>
+          <path d="M0,270 C90,232 170,250 250,238 C340,224 420,252 520,236 C580,228 620,240 640,236 L640,300 L0,300 Z" fill="#7D7466"/>
+          ${trees}
+          <path d="M20,205 Q330,235 630,200" stroke="#3A332D" stroke-width="1.5" fill="none"/>
+          ${lights}
+        </g>
+        <rect y="296" width="640" height="104" fill="#5A4A3C"/>
+        <rect y="328" width="640" height="40" fill="#3E3630"/>
+        <g filter="url(#f-motion)"><g class="ride"><g transform="translate(0,352)" stroke="#221E1A" stroke-width="3" fill="none" stroke-linecap="round">
+          <circle cx="0" cy="0" r="16"/><circle cx="50" cy="0" r="16"/>
+          <path d="M0,0 L20,-24 L50,0 M20,-24 L40,-24 L50,0 M20,-24 L15,-31 M40,-24 L44,-34"/>
+          <path d="M17,-33 L30,-56 M30,-56 L44,-36 M17,-33 L26,-12 L24,-4" stroke-width="5"/>
+          <circle cx="33" cy="-64" r="7" fill="#221E1A" stroke="none"/></g></g></g>
+        <g fill="#221E1A">
+          <circle cx="150" cy="232" r="12"/>
+          <path d="M134,248 Q150,241 166,248 L171,298 L161,298 L159,330 L152,330 L150,300 L148,330 L141,330 L139,298 L129,298 Z"/>
+        </g>
+      </g>
+      <rect id="grain" width="640" height="400" filter="url(#f-grain)" opacity="0" style="mix-blend-mode:overlay"/>
+    </g>
+  </svg>`;
+}
+
+const ISO = [100, 200, 400, 800, 1600, 3200, 6400, 12800];
+const AP = [1.4, 2, 2.8, 4, 5.6, 8, 11, 16];
+const SH = [1 / 2000, 1 / 1000, 1 / 500, 1 / 250, 1 / 125, 1 / 60, 1 / 30, 1 / 15, 1 / 8, 1 / 4];
+const shLabel = t => t < 1 ? "1/" + Math.round(1 / t) + " s" : t + " s";
+const cam = { iso: 0, ap: 2, sh: 3 };
+
+function updateBasics() {
+  const iso = ISO[cam.iso], N = AP[cam.ap], t = SH[cam.sh];
+  const stops = Math.log2(iso / 100) + 2 * Math.log2(2.8 / N) + Math.log2(t * 250);
+  const light = document.getElementById("scene-light"); if (!light) return;
+  light.style.filter = `brightness(${Math.min(2.1, Math.max(0.12, Math.pow(2, stops * (stops > 0 ? 0.32 : 0.45)))).toFixed(3)})`;
+  document.getElementById("grain").setAttribute("opacity", (Math.log2(iso / 100) / 7 * 0.75).toFixed(3));
+  document.getElementById("bg-blur").setAttribute("stdDeviation", Math.max(0, 7 * Math.pow(2.8 / N, 1.3) - 1).toFixed(2));
+  document.getElementById("mo-blur").setAttribute("stdDeviation", `${Math.min(45, t * 900).toFixed(2)} 0`);
+
+  document.getElementById("v-iso").textContent = iso;
+  document.getElementById("v-ap").textContent = "f/" + N;
+  document.getElementById("v-sh").textContent = shLabel(t);
+  document.getElementById("k-iso").value = cam.iso;
+  document.getElementById("k-ap").value = cam.ap;
+  document.getElementById("k-sh").value = cam.sh;
+
+  document.getElementById("x-iso").innerHTML = "Like your screen brightness. " +
+    (iso <= 200 ? "<b>Low:</b> clean and smooth, but it needs plenty of light." : iso <= 1600 ? "<b>Medium:</b> brighter, with a little grain." : "<b>High:</b> much brighter, but the photo turns grainy.");
+  document.getElementById("x-ap").innerHTML = "Like the pupil of your eye: a smaller f-number is a wider opening. " +
+    (N <= 2.8 ? "<b>Wide:</b> lots of light, and the background lights melt into soft blur." : N <= 5.6 ? "<b>Middle:</b> some light and a little background blur." : "<b>Narrow:</b> less light, and everything stays sharp front to back.");
+  document.getElementById("x-sh").innerHTML = "Like a blink: how long the camera looks. " +
+    (t <= 1 / 500 ? "<b>Fast:</b> freezes the cyclist in place." : t <= 1 / 125 ? "<b>Normal:</b> fast movement starts to blur." : "<b>Slow:</b> lots of light, but the cyclist turns into a streak.");
+
+  const tag = document.getElementById("exp-tag");
+  tag.textContent = Math.abs(stops) <= 0.7 ? "Balanced" : stops < 0 ? (stops < -2 ? "Far too dark" : "Too dark") : (stops > 2 ? "Far too bright" : "Too bright");
+  tag.style.color = Math.abs(stops) <= 0.7 ? C.good : C.bad;
+  const svg = d3.select("#exp-scale"); svg.selectAll("*").remove();
+  const w = svg.node().getBoundingClientRect().width || 300;
+  const x = d3.scaleLinear().domain([-4, 4]).range([8, w - 8]).clamp(true);
+  for (let v = -4; v <= 4; v++) svg.append("line").attr("x1", x(v)).attr("x2", x(v)).attr("y1", v === 0 ? 10 : 16).attr("y2", 26)
+    .attr("stroke", v === 0 ? C.ink : C.tert).attr("stroke-width", v === 0 ? 2 : 1);
+  [[-4, "darker"], [0, "balanced"], [4, "brighter"]].forEach(([v, l]) => svg.append("text").attr("x", x(v)).attr("y", 40)
+    .attr("text-anchor", v < 0 ? "start" : v > 0 ? "end" : "middle").attr("font-size", 12).attr("fill", C.muted).text(l));
+  svg.append("path").attr("d", "M-7,0 L7,0 L0,11 Z").attr("fill", C.accent).attr("transform", `translate(${x(stops)},0)`);
+}
+
+function setupBasics() {
+  const bind = (id, key) => { document.getElementById(id).oninput = e => { cam[key] = +e.target.value; updateBasics(); }; };
+  bind("k-iso", "iso"); bind("k-ap", "ap"); bind("k-sh", "sh");
+  const best = list => (list && list.length) ? list.reduce((a, b) => b.count > a.count ? b : a).label : null;
+  document.getElementById("b-common").onclick = () => {
+    const iso = best(DATA.settings.iso), ap = best(DATA.settings.aperture), sh = best(DATA.settings.shutter);
+    const i = ISO.indexOf(+iso), a = AP.indexOf(+String(ap).replace("f/", "")), s = SH.findIndex(v => shLabel(v) === sh + " s");
+    if (i >= 0) cam.iso = i; if (a >= 0) cam.ap = a; if (s >= 0) cam.sh = s;
+    updateBasics();
+  };
+}
+
+/* ---------- charts ---------- */
+function size(el) { const r = el.getBoundingClientRect(); return { w: Math.max(260, r.width), h: Math.max(340, r.height) }; }
+
+function drawDevice() {
+  const el = document.getElementById("viz-device"); if (!el) return; el.innerHTML = "";
+  const rows = DATA.device; const { w, h } = size(el);
+  const H = Math.min(h, 90 * rows.length + 40), m = { l: 0, r: 70, t: 10, b: 10 };
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", H);
+  const x = d3.scaleLinear().domain([0, d3.max(rows, r => r.rate) * 1.05]).range([0, w - m.l - m.r]);
+  const band = (H - m.t - m.b) / rows.length;
+  rows.forEach((r, i) => {
+    const g = svg.append("g").attr("transform", `translate(${m.l},${m.t + i * band})`);
+    g.append("text").attr("y", 18).attr("font-size", 17).attr("font-weight", 600).text(r.name);
+    g.append("text").attr("x", 80).attr("y", 18).attr("font-size", 13).attr("fill", C.muted).text(`${fmt(r.count)} photos`);
+    g.append("rect").attr("y", 28).attr("height", Math.min(26, band - 44)).attr("rx", 4).attr("width", 0)
+      .attr("fill", deviceColor[r.name])
+      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} of viewers download<br>${fmt(r.count)} photos`))
+      .on("mouseleave", hideTip)
+      .transition().duration(700).attr("width", x(r.rate));
+    g.append("text").attr("x", x(r.rate) + 10).attr("y", 28 + Math.min(26, band - 44) / 2 + 6)
+      .attr("font-size", 17).attr("font-weight", 650).text(pct(r.rate));
+  });
+}
+
+function brandName(b) { return { dji: "DJI", gopro: "GoPro", zwo: "ZWO" }[b] || b.charAt(0).toUpperCase() + b.slice(1); }
+function drawBrands() {
+  const el = document.getElementById("viz-brands"); if (!el) return; el.innerHTML = "";
+  const rows = DATA.brands; const live = document.getElementById("brands-live");
+  if (!rows.length) { live.textContent = "No photos with camera info in your selection."; return; }
+  const top3 = rows.slice(0, 3).reduce((s, r) => s + r.count, 0) / DATA.brands_known * 100;
+  const phoneAt = rows.findIndex(r => r.type === "phone");
+  live.innerHTML = `In your selection, the top three brands took <b>${top3.toFixed(0)}%</b> of the photos with camera info.` +
+    (phoneAt >= 0 ? ` The first phone brand, ${brandName(rows[phoneAt].name)}, is number <b>${phoneAt + 1}</b>.` : "");
+  const { w } = size(el); const rowH = 34, H = rows.length * rowH;
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", H);
+  const x = d3.scaleLinear().domain([0, rows[0].count]).range([0, w - 210]);
+  rows.forEach((r, i) => {
+    const g = svg.append("g").attr("transform", `translate(0,${i * rowH})`);
+    g.append("text").attr("y", 18).attr("font-size", 15).attr("font-weight", r.type === "phone" ? 650 : 500)
+      .attr("fill", r.type === "phone" ? C.accentDark : C.ink).text(brandName(r.name));
+    g.append("rect").attr("x", 110).attr("y", 6).attr("height", 16).attr("rx", 3).attr("width", 0)
+      .attr("fill", deviceColor[r.type] || C.soft)
+      .on("mousemove", ev => showTip(ev, `<b>${brandName(r.name)}</b><br>${fmt(r.count)} photos, mostly ${r.type}`)).on("mouseleave", hideTip)
+      .transition().duration(600).attr("width", Math.max(2, x(r.count)));
+    g.append("text").attr("x", 110 + Math.max(2, x(r.count)) + 8).attr("y", 18).attr("font-size", 13).attr("fill", C.muted)
+      .text(`${fmt(r.count)}  (${(r.count / DATA.brands_known * 100).toFixed(1)}%)`);
+  });
+}
+
+function drawOrientation() {
+  const el = document.getElementById("viz-orientation"); if (!el) return; el.innerHTML = "";
+  const rows = DATA.orientation; const { w, h } = size(el);
+  const ratio = { landscape: 1.5, square: 1, portrait: 0.667 };
+  const gap = 34, H = Math.min(h * 0.5, 230);
+  let totalW = rows.reduce((s, r) => s + H * ratio[r.name], 0) + gap * (rows.length - 1);
+  const k = Math.min(1, (w - 10) / totalW); const fh = H * k;
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", fh + 130);
+  const maxRate = d3.max(rows, r => r.rate);
+  let x0 = 0;
+  rows.forEach(r => {
+    const fw = fh * ratio[r.name]; const best = r.name === "landscape";
+    const col = best ? C.accent : C.tert;
+    const g = svg.append("g").attr("transform", `translate(${x0},0)`)
+      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} of viewers download<br>${fmt(r.count)} photos`))
+      .on("mouseleave", hideTip);
+    g.append("rect").attr("width", fw).attr("height", fh).attr("fill", best ? "rgba(201,106,47,.08)" : "transparent")
+      .attr("stroke", col).attr("stroke-width", best ? 2.5 : 1.5).attr("rx", 3);
+    g.append("text").attr("x", fw / 2).attr("y", fh / 2 + 10).attr("text-anchor", "middle").attr("class", "big-num")
+      .attr("font-size", Math.max(20, Math.min(40, fw / 3.6))).attr("fill", best ? C.accentDark : C.ink).text(pct(r.rate));
+    const bw = d3.scaleLinear().domain([0, maxRate]).range([0, fw])(r.rate);
+    g.append("rect").attr("y", fh + 18).attr("height", 10).attr("rx", 3).attr("width", 0).attr("fill", best ? C.accent : C.pale)
+      .transition().duration(700).attr("width", bw);
+    g.append("text").attr("y", fh + 52).attr("font-size", 16).attr("font-weight", 600).text(r.name);
+    g.append("text").attr("y", fh + 72).attr("class", "shape-label").text(`${fmt(r.count)} photos`);
+    x0 += fw + gap;
+  });
+}
+
+function drawShare() {
+  const el = document.getElementById("viz-share"); if (!el) return; el.innerHTML = "";
+  const { w, h } = size(el); const H = Math.min(h - 70, 470);
+  const d = DATA; const total = d.top1sum + d.next9 + d.other90;
+  const groups = [
+    { label: "Top 1% of photos", short: "top 1%", value: d.top1sum, color: C.accent, photos: true },
+    { label: "Next 9% of photos", short: "next 9%", value: d.next9, color: C.soft },
+    { label: "Other 90% of photos", short: "other 90%", value: d.other90, color: C.pale },
+  ].filter(g => g.value > 0);
+  const gap = 4, usable = w - gap * (groups.length - 1);
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", H + 62);
+  let x0 = 0;
+  groups.forEach(gr => {
+    const gw = Math.max(70, usable * gr.value / total), share = gr.value / total * 100;
+    const g = svg.append("g").attr("transform", `translate(${x0},0)`);
+    if (gr.photos) {
+      const kids = d.mosaic.map(p => ({ value: p.d, p }));
+      if (d.rest_top1 > 0) kids.push({ value: d.rest_top1, rest: true });
+      const root = d3.hierarchy({ children: kids }).sum(n => n.value || 0).sort((a, b) => b.value - a.value);
+      d3.treemap().size([gw, H]).paddingInner(1.5).tile(d3.treemapSquarify.ratio(1))(root);
+      root.leaves().forEach(n => {
+        const tw = n.x1 - n.x0, th = n.y1 - n.y0;
+        const t = g.append("g").attr("transform", `translate(${n.x0},${n.y0})`);
+        if (n.data.rest) {
+          t.append("rect").attr("width", tw).attr("height", th).attr("fill", C.accent);
+          if (tw > 60 && th > 30) t.append("text").attr("x", 8).attr("y", 20).attr("font-size", 13).attr("font-weight", 600)
+            .attr("fill", "#FFFFFF").text(`+${fmt(d.n_top1 - d.mosaic.length)} more`);
+          t.on("mousemove", ev => showTip(ev, `<b>${fmt(d.n_top1 - d.mosaic.length)} more top photos</b><br>${fmt(n.data.value)} downloads`)).on("mouseleave", hideTip);
+          return;
+        }
+        const a = t.append("a").attr("href", n.data.p.url).attr("target", "_blank");
+        a.append("rect").attr("width", tw).attr("height", th).attr("fill", "#E2D9CC");
+        a.append("image").attr("href", n.data.p.img).attr("width", tw).attr("height", th).attr("preserveAspectRatio", "xMidYMid slice");
+        a.on("mousemove", ev => showTip(ev, `<b>${fmt(n.data.p.d)} downloads</b><br>${n.data.p.desc}<br>${n.data.p.camera}`)).on("mouseleave", hideTip);
+      });
+    } else {
+      g.append("rect").attr("width", gw).attr("height", H).attr("rx", 2).attr("fill", gr.color)
+        .on("mousemove", ev => showTip(ev, `<b>${gr.label}</b><br>${share.toFixed(1)}% of all downloads`)).on("mouseleave", hideTip);
+    }
+    g.append("rect").attr("y", H + 10).attr("width", gw).attr("height", 3).attr("fill", gr.color);
+    g.append("text").attr("y", H + 36).attr("font-size", 22).attr("font-weight", 700).attr("font-stretch", "115%").text(share.toFixed(0) + "%");
+    g.append("text").attr("y", H + 56).attr("font-size", 13).attr("fill", C.muted).text(gr.short);
+    x0 += gw + gap;
+  });
+}
+
+function drawTime() {
+  const el = document.getElementById("viz-time"); if (!el) return; el.innerHTML = "";
+  const rows = DATA.years; const { w, h } = size(el); const H = Math.min(h - 10, 420);
+  const m = { l: 50, r: 10, t: 30, b: 30 };
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", H);
+  const x = d3.scaleBand().domain(rows.map(r => r.year)).range([m.l, w - m.r]).padding(0.18);
+  const y = d3.scaleLinear().domain([0, d3.max(rows, r => r.median) * 1.12]).nice().range([H - m.b, m.t]);
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`)
+    .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format("~s")).tickSize(-(w - m.l - m.r)))
+    .call(g => g.select(".domain").remove()).call(g => g.selectAll("line").attr("stroke", C.grid));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`)
+    .call(d3.axisBottom(x).tickSize(0).tickFormat(v => (rows.length > 9 && v % 2) ? "" : v))
+    .call(g => g.select(".domain").remove()).selectAll("text").attr("dy", 14);
+  const top = d3.max(rows, r => r.median);
+  svg.selectAll(".bar").data(rows).join("rect").attr("class", "bar").attr("x", r => x(r.year)).attr("width", x.bandwidth())
+    .attr("rx", 3).attr("y", H - m.b).attr("height", 0).attr("fill", r => r.median === top ? C.accent : C.soft)
+    .on("mousemove", (ev, r) => showTip(ev, `<b>${r.year}</b><br>median ${fmt(r.median)} downloads<br>${fmt(r.count)} photos`))
+    .on("mouseleave", hideTip)
+    .transition().duration(700).attr("y", r => y(r.median)).attr("height", r => H - m.b - y(r.median));
+  const best = rows.find(r => r.median === top);
+  svg.append("text").attr("x", x(best.year) + x.bandwidth() / 2).attr("y", y(best.median) - 8).attr("text-anchor", "middle")
+    .attr("font-size", 14).attr("font-weight", 650).text(fmt(best.median));
+}
+
+function drawSettings() {
+  const el = document.getElementById("viz-settings"); if (!el) return; el.innerHTML = "";
+  const groups = [["ISO", DATA.settings.iso], ["Aperture", DATA.settings.aperture], ["Shutter speed", DATA.settings.shutter]];
+  const { w } = size(el); const rowH = 118;
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", rowH * groups.length);
+  groups.forEach(([name, rows], gi) => {
+    if (!rows.length) return;
+    const g = svg.append("g").attr("transform", `translate(0,${gi * rowH})`);
+    g.append("text").attr("y", 16).attr("font-size", 15).attr("font-weight", 600).text(name);
+    const x = d3.scaleBand().domain(rows.map(r => r.label)).range([0, w]).padding(0.25);
+    const top = d3.max(rows, r => r.count);
+    const hy = d3.scaleLinear().domain([0, top]).range([0, 56]);
+    g.append("line").attr("x1", 0).attr("x2", w).attr("y1", 86).attr("y2", 86).attr("stroke", C.pale);
+    rows.forEach(r => {
+      const best = r.count === top;
+      g.append("rect").attr("x", x(r.label)).attr("width", x.bandwidth()).attr("rx", 2)
+        .attr("y", 84).attr("height", 0).attr("fill", best ? C.accent : C.pale)
+        .on("mousemove", ev => showTip(ev, `<b>${name} ${r.label}</b><br>${fmt(r.count)} photos`)).on("mouseleave", hideTip)
+        .transition().duration(600).attr("y", 84 - hy(r.count)).attr("height", hy(r.count));
+      g.append("text").attr("x", x(r.label) + x.bandwidth() / 2).attr("y", 104).attr("text-anchor", "middle")
+        .attr("font-size", 12).attr("font-stretch", "80%").attr("fill", best ? C.accentDark : C.muted).attr("font-weight", best ? 650 : 400).text(r.label);
+    });
+  });
+}
+
+/* ---------- model: the tree runs in the browser ---------- */
+const state = { orientation: "landscape", device: "camera", year: 2019, mp: 20 };
+function ask(f, th, v, left) {
+  if (f.startsWith("orientation_")) return { q: `Is it ${f.slice(12)}?`, yes: v > 0.5 };
+  if (f.startsWith("camera_type_")) return { q: `Taken with a ${f.slice(12)}?`, yes: v > 0.5 };
+  if (f === "year") return { q: `Uploaded in ${Math.floor(th)} or earlier?`, yes: left };
+  if (f === "megapixels") return { q: `Smaller than ${th.toFixed(1)} megapixels?`, yes: left };
+  return { q: `${f} at most ${th}?`, yes: left };
+}
+function predict() {
+  const t = DATA.model.tree;
+  const x = { year: state.year, megapixels: state.mp };
+  ["landscape", "portrait", "square"].forEach(o => x["orientation_" + o] = state.orientation === o ? 1 : 0);
+  ["camera", "drone", "phone", "unknown"].forEach(c => x["camera_type_" + c] = state.device === c ? 1 : 0);
+  let n = 0; const steps = [];
+  while (t.left[n] !== -1) {
+    const v = x[t.feature[n]] ?? 0, left = v <= t.threshold[n];
+    steps.push(ask(t.feature[n], t.threshold[n], v, left));
+    n = left ? t.left[n] : t.right[n];
+  }
+  return { p: t.prob[n] * 100, steps, samples: t.samples[n] };
+}
+let meterX = null;
+function drawMeter() {
+  const svg = d3.select("#meter"); if (svg.empty()) return; svg.selectAll("*").remove();
+  const w = svg.node().getBoundingClientRect().width || 400;
+  meterX = d3.scaleLinear().domain([0, 100]).range([8, w - 8]);
+  for (let v = 0; v <= 100; v += 5) {
+    const major = v % 25 === 0;
+    svg.append("line").attr("x1", meterX(v)).attr("x2", meterX(v)).attr("y1", major ? 26 : 32).attr("y2", 44)
+      .attr("stroke", v === 50 ? C.ink : C.muted).attr("stroke-width", v === 50 ? 2 : 1);
+  }
+  [[0, "0%"], [50, "coin flip"], [100, "100%"]].forEach(([v, l]) =>
+    svg.append("text").attr("x", meterX(v)).attr("y", 64).attr("text-anchor", v === 0 ? "start" : v === 100 ? "end" : "middle")
+      .attr("font-size", 12).attr("fill", C.muted).text(l));
+  svg.append("path").attr("id", "needle").attr("d", "M-8,4 L8,4 L0,18 Z").attr("fill", C.accent)
+    .attr("transform", `translate(${meterX(50)},0)`);
+  updateMeter();
+}
+function updateMeter() {
+  const r = predict(), p = r.p;
+  const pctEl = document.getElementById("m-pct"); if (!pctEl) return;
+  document.getElementById("m-path").innerHTML = r.steps.map(s =>
+    `<li><span class="q">${s.q}</span><span class="a ${s.yes ? "yes" : "no"}">${s.yes ? "Yes" : "No"}</span></li>`).join("");
+  document.getElementById("m-leaf").innerHTML = `So the model looks at the <b>${fmt(r.samples)}</b> training photos that gave the same answers:
+    <b>${Math.round(p)}%</b> of them had a higher than typical download rate.`;
+  pctEl.textContent = Math.round(p) + "%";
+  pctEl.style.color = p >= 50 ? C.good : C.bad;
+  d3.select("#needle").transition().duration(500).attr("transform", `translate(${meterX(p)},0)`);
+}
+function wireModel() {
+  const set = (id, key) => {
+    const box = document.getElementById(id);
+    box.querySelectorAll(".choice").forEach(b => {
+      b.setAttribute("aria-pressed", b.dataset.v === state[key]);
+      b.onclick = () => { state[key] = b.dataset.v; box.querySelectorAll(".choice").forEach(o => o.setAttribute("aria-pressed", o === b)); updateMeter(); };
+    });
+  };
+  set("c-orient", "orientation"); set("c-device", "device");
+  const yr = document.getElementById("c-year"), mp = document.getElementById("c-mp");
+  yr.oninput = () => { state.year = +yr.value; document.getElementById("o-year").textContent = yr.value; updateMeter(); };
+  mp.oninput = () => { state.mp = +mp.value; document.getElementById("o-mp").textContent = mp.value; updateMeter(); };
+}
+
+/* ---------- navigation ---------- */
+let current = 0;
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+function go(i) {
+  current = Math.max(0, Math.min(frames.length - 1, i));
+  document.querySelectorAll(".frame").forEach((f, j) => {
+    f.classList.toggle("active", j === current); f.classList.toggle("before", j < current);
+    f.setAttribute("aria-hidden", j !== current);
+  });
+  document.querySelectorAll(".thumb").forEach((t, j) => t.setAttribute("aria-current", j === current));
+  document.querySelectorAll(".thumb")[current].scrollIntoView({ block: "nearest", inline: "nearest" });
+  store("unsplash-frame", current);
+  redraw(frames[current].id);
+}
+const drawers = { device: drawDevice, brands: drawBrands, basics: updateBasics, orientation: drawOrientation, share: drawShare, time: drawTime, settings: drawSettings, model: drawMeter };
+function redraw(id) { if (drawers[id]) drawers[id](); }
+
+function build() {
+  if (!DATA || !DATA.n) {
+    stage.innerHTML = `<section class="frame active"><div class="copy"><h2>No photos match these filters</h2>
+      <p>Add a device type or widen the year range in the sidebar.</p></div></section>`;
+    return;
+  }
+  stage.innerHTML = frames.map((f, i) =>
+    `<section class="frame ${f.id === "opening" ? "opening" : ""}" id="frame-${f.id}" aria-label="${f.short}">${frameHTML(f)}</section>`).join("");
+  document.getElementById("thumbs").innerHTML = frames.map((f, i) =>
+    `<button class="thumb" data-i="${i}"><span class="n">${String(i + 1).padStart(2, "0")}</span><span class="t">${f.short}</span></button>`).join("");
+  document.querySelectorAll(".thumb").forEach(t => t.onclick = () => go(+t.dataset.i));
+  document.querySelector("[data-go]").onclick = () => go(1);
+  document.getElementById("prev").onclick = () => go(current - 1);
+  document.getElementById("next").onclick = () => go(current + 1);
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "INPUT") return;
+    if (e.key === "ArrowRight") go(current + 1);
+    if (e.key === "ArrowLeft") go(current - 1);
+  });
+  wireModel();
+  setupBasics();
+  const saved = +(load("unsplash-frame") || 0);
+  go(isNaN(saved) ? 0 : saved);
+  let t; window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => redraw(frames[current].id), 150); });
+}
+build();
+</script>
+</body>
+</html>
