@@ -1,4 +1,5 @@
 import json
+import numpy as np
 import streamlit as st
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
@@ -13,36 +14,50 @@ st.markdown(
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&display=swap');
 html, body, p, label, input, button, h1, h2, h3, .stMarkdown { font-family: 'Archivo', sans-serif; }
 [data-testid="stHeader"] { background: transparent; }
-.block-container { padding: 3.4rem 1.5rem 2rem 1.5rem; max-width: 100%; }
-.section-title { font-size: 1.8rem; font-weight: 700; font-stretch: 120%; margin: 2.2rem 0 0.3rem 0; color: #292929; }
-.section-sub { color: #66615C; margin-bottom: 1rem; }
+.block-container { padding: 3rem 1.5rem 2rem 1.5rem; max-width: 100%; }
 
-/* sidebar */
-[data-testid="stSidebar"] { background: #EAE3D8; border-right: 1px solid #DDD5C8; }
-[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 0.5rem; }
-[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { font-size: 13px; color: #66615C; font-weight: 500; }
-.sb-name { font-size: 30px; font-weight: 750; font-stretch: 122%; color: #292929; line-height: 1; margin: 0 0 10px 0; }
-.sb-desc { font-size: 14px; line-height: 1.55; color: #454140; margin: 0 0 22px 0; }
-.sb-head { font-size: 13px; font-weight: 600; color: #292929; margin: 6px 0 12px 0; padding-top: 18px;
-           border-top: 1px solid #DDD5C8; }
-.sb-count { margin-top: 18px; padding-top: 18px; border-top: 1px solid #DDD5C8; }
-.sb-count .num { font-size: 28px; font-weight: 700; font-stretch: 115%; color: #292929; line-height: 1; }
-.sb-count .of { font-size: 13px; color: #66615C; margin: 4px 0 10px 0; }
-.sb-bar { height: 6px; background: #DDD5C8; border-radius: 3px; overflow: hidden; }
-.sb-bar span { display: block; height: 100%; background: #C96A2F; border-radius: 3px; }
-.sb-warn { font-size: 13px; color: #A6412B; margin-top: 10px; }
-.sb-foot { font-size: 12px; line-height: 1.5; color: #99938B; margin-top: 26px; }
-.sb-foot a { color: #66615C; }
+/* top bar */
+.st-key-topbar { background: #EAE3D8; border: 1px solid #DDD5C8; border-radius: 8px; padding: 14px 20px 16px 20px; }
+.st-key-topbar [data-testid="stWidgetLabel"] p { font-size: 13px; color: #66615C; font-weight: 500; }
+.tb-name { font-size: 26px; font-weight: 750; font-stretch: 122%; color: #292929; line-height: 1; margin: 0 0 6px 0; }
+.tb-desc { font-size: 13px; line-height: 1.45; color: #454140; margin: 0; }
+.tb-count .num { font-size: 26px; font-weight: 700; font-stretch: 115%; color: #292929; line-height: 1; }
+.tb-count .of { font-size: 12px; color: #66615C; margin: 4px 0 8px 0; }
+.tb-bar { height: 6px; background: #DDD5C8; border-radius: 3px; overflow: hidden; }
+.tb-bar span { display: block; height: 100%; background: #C96A2F; border-radius: 3px; }
+.tb-warn { font-size: 12px; color: #A6412B; margin-top: 6px; }
+.foot { font-size: 12px; line-height: 1.5; color: #99938B; margin-top: 10px; }
+.foot a { color: #66615C; }
+div[role="dialog"]:has(.wide-dialog) { width: min(1200px, 94vw); max-width: 94vw; }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 
+# what the photo shows, guessed from words in its AI description
+# the order matters: a photo of a man on a mountain counts as "People"
+SUBJECTS = {
+    "People": ["man", "woman", "person", "people", "girl", "boy", "men", "women", "child", "couple"],
+    "Night sky": ["star", "milky way", "galaxy", "night sky", "aurora"],
+    "Animals": ["dog", "cat", "bird", "animal", "horse", "deer", "fox", "puppy", "kitten"],
+    "Flowers & plants": ["flower", "plant", "leaf", "leaves", "succulent", "rose"],
+    "City & buildings": ["building", "city", "street", "road", "bridge", "architecture", "tower"],
+    "Sea & beach": ["beach", "sea", "ocean", "wave", "shore", "seashore"],
+    "Mountains": ["mountain"],
+    "Forest & trees": ["tree", "forest", "woods"],
+    "Sky & sunset": ["sky", "sunset", "sunrise", "cloud", "moon"],
+}
+
+
 @st.cache_data
 def load_data():
     df = pd.read_csv("data/clean_data.csv")
     df["download_pct"] = df["download_rate"] * 100
+
+    desc = df["ai_description"].fillna("").str.lower()
+    conditions = [desc.str.contains(r"\b(?:" + "|".join(words) + r")s?\b") for words in SUBJECTS.values()]
+    df["subject"] = np.select(conditions, list(SUBJECTS.keys()), default="Other")
     return df
 
 
@@ -116,6 +131,16 @@ def story_data(filtered, total):
                                         type=("camera_type", lambda s: s.mode().iloc[0]))
     brands = brands.sort_values("count", ascending=False).head(10)
 
+    # download rate by subject, with the most downloaded photo of each as an example
+    subject_rows = []
+    for name, group in filtered[filtered["subject"] != "Other"].groupby("subject"):
+        if len(group) < 20:
+            continue
+        best = group.sort_values("downloads", ascending=False).iloc[0]
+        subject_rows.append({"name": name, "rate": float(group["download_pct"].median()), "count": len(group),
+                             "img": best["photo_image_url"] + "?w=160&h=160&fit=crop&q=60", "url": best["photo_url"]})
+    subject_rows = sorted(subject_rows, key=lambda r: r["rate"], reverse=True)
+
     tree = model.tree_
     names = {"year": "Upload year", "orientation_portrait": "Portrait or not", "megapixels": "Megapixels",
              "orientation_landscape": "Landscape or not", "orientation_square": "Square or not"}
@@ -150,6 +175,7 @@ def story_data(filtered, total):
         "focal": {k: round(float(v), 1) for k, v in focal.dropna().items()},
         "brands": [{"name": b, "count": int(r["count"]), "type": r["type"]} for b, r in brands.iterrows()],
         "brands_known": int(len(known)),
+        "subjects": subject_rows,
         "overall_rate": float(load_data()["download_pct"].median()),
         "model": {
             "test_acc": test_acc,
@@ -168,51 +194,69 @@ def story_data(filtered, total):
 
 
 df = load_data()
+show_cols = ["photo_id", "year", "brand", "camera_model", "camera_type", "orientation", "subject",
+             "iso", "aperture", "focal_length", "views", "downloads", "download_pct"]
+stats_cols = ["views", "downloads", "download_pct", "iso", "aperture", "focal_length", "megapixels"]
 
-# ---------------- Sidebar ----------------
-st.sidebar.markdown(
-    """
-<div class="sb-name">Unsplash Lite</div>
-<div class="sb-desc">25,000 free photos, the camera settings behind each one, and how many people viewed and downloaded them.</div>
-<div class="sb-head">Filter the story</div>
-""",
-    unsafe_allow_html=True,
-)
 
-devices = st.sidebar.pills(
-    "Taken with",
-    options=["camera", "phone", "drone", "unknown"],
-    selection_mode="multi",
-    default=["camera", "phone", "drone", "unknown"],
-)
-years = st.sidebar.slider(
-    "Upload year",
-    min_value=int(df["year"].min()),
-    max_value=int(df["year"].max()),
-    value=(int(df["year"].min()), int(df["year"].max())),
-)
-orientation = st.sidebar.selectbox("Orientation", ["All", "landscape", "portrait", "square"])
+@st.dialog("The data behind the story", width="large")
+def show_data(data):
+    st.markdown('<div class="wide-dialog"></div>', unsafe_allow_html=True)
+    st.caption(f"The first 100 of the {len(data):,} photos in your selection.")
+    st.dataframe(data[show_cols].head(100), width="stretch", height=480)
 
-filtered = df[df["camera_type"].isin(devices)]
-filtered = filtered[(filtered["year"] >= years[0]) & (filtered["year"] <= years[1])]
-if orientation != "All":
-    filtered = filtered[filtered["orientation"] == orientation]
 
-share = len(filtered) / len(df) * 100
-warning = '<div class="sb-warn">Pick at least one device to see the story.</div>' if not devices else ""
-st.sidebar.markdown(
-    f"""
-<div class="sb-count">
+@st.dialog("Summary statistics", width="large")
+def show_stats(data):
+    st.markdown('<div class="wide-dialog"></div>', unsafe_allow_html=True)
+    st.caption(f"Count, mean, spread and percentiles for the {len(data):,} photos in your selection.")
+    st.dataframe(data[stats_cols].describe().round(2), width="stretch")
+
+
+# ---------------- Top bar: filters + data buttons ----------------
+with st.container(key="topbar"):
+    c_name, c_device, c_year, c_orient, c_count, c_buttons = st.columns(
+        [2.0, 2.6, 2.1, 1.3, 1.4, 1.5], gap="medium", vertical_alignment="center")
+
+    c_name.markdown(
+        """<div class="tb-name">Unsplash Lite</div>
+<div class="tb-desc">25,000 free photos, the camera settings behind each one, and how many people viewed and downloaded them.</div>""",
+        unsafe_allow_html=True,
+    )
+    devices = c_device.pills(
+        "Taken with",
+        options=["camera", "phone", "drone", "unknown"],
+        selection_mode="multi",
+        default=["camera", "phone", "drone", "unknown"],
+    )
+    years = c_year.slider(
+        "Upload year",
+        min_value=int(df["year"].min()),
+        max_value=int(df["year"].max()),
+        value=(int(df["year"].min()), int(df["year"].max())),
+    )
+    orientation = c_orient.selectbox("Orientation", ["All", "landscape", "portrait", "square"])
+
+    filtered = df[df["camera_type"].isin(devices)]
+    filtered = filtered[(filtered["year"] >= years[0]) & (filtered["year"] <= years[1])]
+    if orientation != "All":
+        filtered = filtered[filtered["orientation"] == orientation]
+
+    share = len(filtered) / len(df) * 100
+    warning = '<div class="tb-warn">Pick at least one device.</div>' if not devices else ""
+    c_count.markdown(
+        f"""<div class="tb-count">
   <div class="num">{len(filtered):,}</div>
   <div class="of">of {len(df):,} photos in the story</div>
-  <div class="sb-bar"><span style="width:{share:.1f}%"></span></div>
+  <div class="tb-bar"><span style="width:{share:.1f}%"></span></div>
   {warning}
-</div>
-<div class="sb-foot">The prediction model always learns from all 25,000 photos.<br>
-Source: <a href="https://github.com/unsplash/datasets" target="_blank">github.com/unsplash/datasets</a></div>
-""",
-    unsafe_allow_html=True,
-)
+</div>""",
+        unsafe_allow_html=True,
+    )
+    if c_buttons.button("Data table", icon=":material/table_chart:", width="stretch"):
+        show_data(filtered)
+    if c_buttons.button("Summary stats", icon=":material/functions:", width="stretch"):
+        show_stats(filtered)
 
 # ---------------- The story (one frame per insight) ----------------
 with open("story.html", encoding="utf-8") as f:
@@ -220,12 +264,8 @@ with open("story.html", encoding="utf-8") as f:
 story = story.replace("/*DATA*/null", json.dumps(story_data(filtered, len(df))))
 st.iframe(story, height=780)
 
-# ---------------- The data behind it ----------------
-st.markdown('<div class="section-title">The data behind the story</div>', unsafe_allow_html=True)
-st.markdown('<div class="section-sub">The first 100 photos in your selection and their summary statistics.</div>',
-            unsafe_allow_html=True)
-show_cols = ["photo_id", "year", "brand", "camera_model", "camera_type", "orientation",
-             "iso", "aperture", "focal_length", "views", "downloads", "download_pct"]
-st.dataframe(filtered[show_cols].head(100), width="stretch", height=280)
-stats_cols = ["views", "downloads", "download_pct", "iso", "aperture", "focal_length", "megapixels"]
-st.dataframe(filtered[stats_cols].describe().round(2), width="stretch")
+st.markdown(
+    """<div class="foot">The prediction model always learns from all 25,000 photos.
+Source: <a href="https://github.com/unsplash/datasets" target="_blank">github.com/unsplash/datasets</a></div>""",
+    unsafe_allow_html=True,
+)

@@ -121,6 +121,21 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: 0; bord
 .path li span.yes { background: rgba(201,106,47,.12); color: var(--accent-dark); }
 .path li span.no { background: #EAE3D8; color: var(--muted); }
 
+/* takeaway */
+.findings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+.finding { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+.finding.wide { grid-column: 1 / -1; }
+.finding .k { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 650; margin-bottom: 8px; }
+.finding .k .num { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px;
+  display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.finding .big { font-size: 26px; font-weight: 700; font-stretch: 115%; line-height: 1.1; }
+.finding .big small { font-size: 14px; font-weight: 500; color: var(--muted); font-stretch: 100%; }
+.finding p { font-size: 14px !important; line-height: 1.5 !important; color: var(--muted) !important; margin: 6px 0 0 0 !important; }
+.finding .go { background: none; border: 0; padding: 0; margin-top: 8px; color: var(--accent-dark); font-size: 13px;
+  font-weight: 600; cursor: pointer; }
+.finding .go:hover { text-decoration: underline; }
+@media (max-width: 820px) { .findings { grid-template-columns: 1fr; } }
+
 /* tooltip */
 .tip { position: absolute; pointer-events: none; background: #292929; border: 0; color: #FFFFFF;
   font-size: 13px; padding: 8px 10px; border-radius: 4px; max-width: 240px; line-height: 1.4; opacity: 0;
@@ -173,11 +188,13 @@ const frames = [
   { id: "device", short: "Phones vs cameras" },
   { id: "brands", short: "Who shoots" },
   { id: "orientation", short: "Landscape wins" },
+  { id: "subject", short: "Look up" },
   { id: "share", short: "A few take most" },
   { id: "time", short: "The head start" },
   { id: "basics", short: "Camera basics" },
   { id: "settings", short: "How they shoot" },
   { id: "model", short: "Take the shot" },
+  { id: "end", short: "The takeaway" },
 ];
 
 const stage = document.getElementById("stage");
@@ -201,7 +218,7 @@ function frameHTML(f) {
       <div class="q">What makes a photo popular?</div>
       <h1>Not the camera.</h1>
       <p>Across ${fmt(d.total)} Unsplash photos, shots from phones and pro cameras get downloaded at almost the same rate.
-      What changes the odds is how the photo is framed and when it was uploaded.</p>
+      What changes the odds is how the photo is framed, what is in it, and when it was uploaded.</p>
       <div class="facts">
         <div class="fact"><b>${fmt(d.n)}</b><span>photos in your selection</span></div>
         <div class="fact"><b>${fmt(d.median_views)}</b><span>median views</span></div>
@@ -227,6 +244,22 @@ function frameHTML(f) {
       <p>The likely reason: people download them for website banners, slides and wallpapers, which are all wide.</p>
       <p class="live">Each frame is drawn in its real shape, with the bar showing the share of viewers who download. Square photos are rare, so their number jumps around with the filters.</p></div>
       <div class="viz" id="viz-orientation"></div>`;
+  }
+  if (f.id === "subject") {
+    return `<div class="copy"><h2>Look up: skies beat people</h2>
+      <p>What is in the photo matters more than what took it. Night skies and sunsets get downloaded far more often than photos of people.</p>
+      <p>The likely reason: a sky works as a background for almost anything, while a photo of a person is about that one person.</p>
+      <p class="live" id="subject-live"></p></div>
+      <div class="viz" id="viz-subject"></div>`;
+  }
+  if (f.id === "end") {
+    return `<div class="copy"><h2>What the roll shows</h2>
+      <p>Popularity on Unsplash is not about owning the best camera. It comes from the photo itself: its shape, its subject, and how long it has been online.</p>
+      <p class="live">Numbers on the cards follow your filters. All rates are medians: the share of viewers who download.</p>
+      <p class="live">Limits: this is 25,000 photos from one platform, subjects come from AI captions, and the model is right only
+      <b>${d.model.test_acc.toFixed(0)}%</b> of the time. Most of what makes a photo loved, the light, the moment, the story, is not in the data.</p>
+      <button class="begin" data-go="0" style="margin-top:10px">Back to the start</button></div>
+      <div class="viz" style="align-items:center"><div class="findings" id="findings"></div></div>`;
   }
   if (f.id === "share") {
     return `<div class="copy"><h2>A few photos take a big share of the downloads</h2>
@@ -485,6 +518,70 @@ function drawOrientation() {
   });
 }
 
+function drawSubject() {
+  const el = document.getElementById("viz-subject"); if (!el) return; el.innerHTML = "";
+  const rows = DATA.subjects; const live = document.getElementById("subject-live");
+  if (!rows.length) { live.textContent = "Too few photos in your selection to compare subjects."; return; }
+  const top = rows[0], people = rows.find(r => r.name === "People");
+  live.innerHTML = `In your selection, <b>${top.name.toLowerCase()}</b> photos get <b>${pct(top.rate)}</b>` +
+    (people && people !== top ? `, people photos <b>${pct(people.rate)}</b>.` : ".") +
+    ` The dashed line is the typical photo (${pct(DATA.median_rate)}). Subjects are read from each photo's AI caption, so a few are mislabeled.`;
+  const { w } = size(el); const rowH = 44, img = 34, labelW = 170, H = rows.length * rowH + 24;
+  const svg = d3.select(el).append("svg").attr("width", w).attr("height", H);
+  const x = d3.scaleLinear().domain([0, d3.max(rows, r => r.rate) * 1.08]).range([0, w - labelW - img - 80]);
+  const x0 = img + 12 + labelW;
+  const color = r => r === top ? C.accent : r.name === "People" ? C.ink2 : C.soft;
+  rows.forEach((r, i) => {
+    const g = svg.append("g").attr("transform", `translate(0,${i * rowH})`)
+      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} of viewers download<br>${fmt(r.count)} photos`))
+      .on("mouseleave", hideTip);
+    const a = g.append("a").attr("href", r.url).attr("target", "_blank");
+    a.append("rect").attr("width", img).attr("height", img).attr("rx", 3).attr("fill", "#E2D9CC");
+    a.append("image").attr("href", r.img).attr("width", img).attr("height", img).attr("preserveAspectRatio", "xMidYMid slice")
+      .attr("clip-path", "inset(0 round 3px)");
+    g.append("text").attr("x", img + 12).attr("y", 15).attr("font-size", 15)
+      .attr("font-weight", r === top || r.name === "People" ? 650 : 500).attr("fill", r === top ? C.accentDark : C.ink).text(r.name);
+    g.append("text").attr("x", img + 12).attr("y", 31).attr("font-size", 12).attr("fill", C.muted).text(`${fmt(r.count)} photos`);
+    g.append("rect").attr("x", x0).attr("y", 9).attr("height", 16).attr("rx", 3).attr("width", 0).attr("fill", color(r))
+      .transition().duration(650).delay(i * 40).attr("width", x(r.rate));
+    g.append("text").attr("x", x0 + x(r.rate) + 8).attr("y", 22).attr("font-size", 14).attr("font-weight", 650).text(pct(r.rate));
+  });
+  const mx = x0 + x(DATA.median_rate);
+  svg.append("line").attr("x1", mx).attr("x2", mx).attr("y1", 0).attr("y2", rows.length * rowH - 6)
+    .attr("stroke", C.ink).attr("stroke-dasharray", "4 4").attr("stroke-width", 1.2);
+  svg.append("text").attr("x", mx).attr("y", rows.length * rowH + 12).attr("text-anchor", "middle")
+    .attr("font-size", 12).attr("fill", C.muted).text("typical photo");
+}
+
+function drawFindings() {
+  const el = document.getElementById("findings"); if (!el) return;
+  const d = DATA, at = id => frames.findIndex(f => f.id === id);
+  const find = (list, n) => list.find(r => r.name === n);
+  const ph = find(d.device, "phone"), ca = find(d.device, "camera");
+  const la = find(d.orientation, "landscape"), po = find(d.orientation, "portrait");
+  const top = d.subjects[0], people = find(d.subjects, "People");
+  const peak = d.years.length ? d.years.reduce((a, b) => b.median > a.median ? b : a) : null;
+  const last = d.years.length ? d.years[d.years.length - 1] : null;
+  const vs = (a, b, la, lb) => a && b ? `${pct(a.rate)} <small>${la} vs</small> ${pct(b.rate)} <small>${lb}</small>` : `<small>Not in your selection</small>`;
+  const cards = [
+    { k: "The camera doesn't decide", frame: "device", big: vs(ph, ca, "phones", "cameras"),
+      p: "Phones and pro cameras convert viewers into downloads at about the same rate." },
+    { k: "Shoot wide", frame: "orientation", big: vs(la, po, "landscape", "portrait"),
+      p: la && po ? `Landscape photos get downloaded about ${Math.round((la.rate / po.rate - 1) * 100)}% more often.` : "Wide photos fit banners, slides and wallpapers." },
+    { k: "Look up", frame: "subject", big: top && people && top !== people ? vs(top, people, top.name.toLowerCase(), "people") : `<small>Not enough photos</small>`,
+      p: "Skies and landscapes work as backgrounds for anything, portraits of people less so." },
+    { k: "A few photos win big", frame: "share", big: `${d.top1.toFixed(0)}% <small>of downloads go to the top 1%</small>`,
+      p: "So the typical photo is the median, not the average." },
+    { k: "Age inflates downloads", frame: "time", big: peak && last ? `${fmt(Math.round(peak.median))} <small>(${peak.year}) vs</small> ${fmt(Math.round(last.median))} <small>(${last.year})</small>` : "",
+      p: "Older photos had years to collect downloads, so fair comparisons use the download rate." },
+    { k: "The model backs it up", frame: "model", big: `${d.model.test_acc.toFixed(0)}% <small>right, vs 50% for a coin flip</small>`,
+      p: "It splits on upload year and portrait framing, and never asks about the device." },
+  ];
+  el.innerHTML = cards.map((c, i) => `<div class="finding"><div class="k"><span class="num">${i + 1}</span>${c.k}</div>
+    <div class="big">${c.big}</div><p>${c.p}</p><button class="go" data-go="${at(c.frame)}">See frame ${String(at(c.frame) + 1).padStart(2, "0")} &#8250;</button></div>`).join("");
+  el.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(+b.dataset.go));
+}
+
 function drawShare() {
   const el = document.getElementById("viz-share"); if (!el) return; el.innerHTML = "";
   const { w, h } = size(el); const H = Math.min(h - 70, 470);
@@ -660,13 +757,13 @@ function go(i) {
   store("unsplash-frame", current);
   redraw(frames[current].id);
 }
-const drawers = { device: drawDevice, brands: drawBrands, basics: updateBasics, orientation: drawOrientation, share: drawShare, time: drawTime, settings: drawSettings, model: drawMeter };
+const drawers = { device: drawDevice, brands: drawBrands, basics: updateBasics, orientation: drawOrientation, subject: drawSubject, share: drawShare, time: drawTime, settings: drawSettings, model: drawMeter, end: drawFindings };
 function redraw(id) { if (drawers[id]) drawers[id](); }
 
 function build() {
   if (!DATA || !DATA.n) {
     stage.innerHTML = `<section class="frame active"><div class="copy"><h2>No photos match these filters</h2>
-      <p>Add a device type or widen the year range in the sidebar.</p></div></section>`;
+      <p>Add a device type or widen the year range in the filters above.</p></div></section>`;
     return;
   }
   stage.innerHTML = frames.map((f, i) =>
@@ -674,7 +771,7 @@ function build() {
   document.getElementById("thumbs").innerHTML = frames.map((f, i) =>
     `<button class="thumb" data-i="${i}"><span class="n">${String(i + 1).padStart(2, "0")}</span><span class="t">${f.short}</span></button>`).join("");
   document.querySelectorAll(".thumb").forEach(t => t.onclick = () => go(+t.dataset.i));
-  document.querySelector("[data-go]").onclick = () => go(1);
+  document.querySelectorAll(".begin[data-go]").forEach(b => b.onclick = () => go(+b.dataset.go));
   document.getElementById("prev").onclick = () => go(current - 1);
   document.getElementById("next").onclick = () => go(current + 1);
   document.addEventListener("keydown", e => {
