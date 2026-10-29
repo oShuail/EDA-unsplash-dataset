@@ -2,7 +2,7 @@
 
 An exploratory data analysis of 25,000 free photos from the [Unsplash Lite dataset](https://github.com/unsplash/datasets), told from a photographer's point of view. It looks at the camera, settings, framing and upload date behind each photo, and how many people viewed and downloaded it.
 
-**Main finding:** phone and camera photos get downloaded at almost the same rate. Framing (landscape vs portrait) and upload date matter more than the camera.
+**Main finding:** phone and camera photos get downloaded at almost the same rate. Framing (landscape vs portrait) and subject matter more than the camera or its settings.
 
 ## Project files
 

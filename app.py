@@ -53,7 +53,12 @@ SUBJECTS = {
 @st.cache_data
 def load_data():
     df = pd.read_csv("data/clean_data.csv")
-    df["download_pct"] = df["download_rate"] * 100
+
+    # "downloaded a lot" = more downloads per view than the typical photo uploaded the same year
+    # comparing within the same year is fair: older photos had more time online
+    year_median = df.groupby("year")["download_rate"].transform("median")
+    df["popular"] = df["download_rate"] > year_median
+    df["per_1000_views"] = (df["download_rate"] * 1000).round(1)
 
     desc = df["ai_description"].fillna("").str.lower()
     conditions = [desc.str.contains(r"\b(?:" + "|".join(words) + r")s?\b") for words in SUBJECTS.values()]
@@ -64,17 +69,22 @@ def load_data():
 @st.cache_resource
 def train_model():
     data = load_data()
-    data = data.assign(high_rate=(data["download_rate"] > data["download_rate"].median()).astype(int))
 
-    X = pd.get_dummies(data[["orientation", "camera_type", "year", "megapixels"]], dtype=int)
-    y = data["high_rate"]
+    # only photos with their camera settings recorded
+    data = data.dropna(subset=["iso", "aperture", "shutter"])
+    data = data[data["camera_type"] != "unknown"]
+
+    # what the photographer chooses when taking the shot
+    X = pd.get_dummies(data[["orientation", "camera_type", "iso", "aperture", "shutter"]], dtype=int)
+    y = data["popular"].astype(int)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    model = DecisionTreeClassifier(max_depth=4, random_state=42)
+    # min_samples_leaf=50: every answer is based on at least 50 photos
+    model = DecisionTreeClassifier(max_depth=4, min_samples_leaf=50, random_state=42)
     model.fit(X_train, y_train)
     test_acc = accuracy_score(y_test, model.predict(X_test)) * 100
     train_acc = accuracy_score(y_train, model.predict(X_train)) * 100
-    return model, list(X.columns), test_acc, train_acc
+    return model, list(X.columns), test_acc, train_acc, len(data)
 
 
 def shutter_text(seconds):
@@ -91,7 +101,7 @@ def top_values(series, label_fn, n=8):
 
 
 def story_data(filtered, total):
-    model, cols, test_acc, train_acc = train_model()
+    model, cols, test_acc, train_acc, model_rows = train_model()
     if len(filtered) == 0:
         return {"n": 0}
 
@@ -118,11 +128,15 @@ def story_data(filtered, total):
     mosaic = photos[: min(150, n_top1)]
     mosaic_sum = sum(p["d"] for p in mosaic)
 
-    device = filtered.groupby("camera_type").agg(rate=("download_pct", "median"), count=("photo_id", "count"))
+    # "rate" = % of photos in each group that were downloaded a lot (50% is average)
+    device = filtered.groupby("camera_type").agg(rate=("popular", "mean"), count=("photo_id", "count"))
+    device["rate"] = device["rate"] * 100
     device = device.sort_values("count", ascending=False).reset_index()
-    orientation = filtered.groupby("orientation").agg(rate=("download_pct", "median"), count=("photo_id", "count"))
+    orientation = filtered.groupby("orientation").agg(rate=("popular", "mean"), count=("photo_id", "count"))
+    orientation["rate"] = orientation["rate"] * 100
     orientation = orientation.reindex([o for o in ["landscape", "square", "portrait"] if o in orientation.index])
     years = filtered.groupby("year").agg(median=("downloads", "median"), count=("photo_id", "count")).reset_index()
+    years = years[years["count"] >= 20]  # a median of 3 photos is noise
     focal = filtered.groupby("camera_type")["focal_length"].median()
 
     # camera brands (photos with camera info only), with the device type each brand is mostly used as
@@ -137,24 +151,18 @@ def story_data(filtered, total):
         if len(group) < 20:
             continue
         best = group.sort_values("downloads", ascending=False).iloc[0]
-        subject_rows.append({"name": name, "rate": float(group["download_pct"].median()), "count": len(group),
+        subject_rows.append({"name": name, "rate": float(group["popular"].mean() * 100), "count": len(group),
                              "img": best["photo_image_url"] + "?w=160&h=160&fit=crop&q=60", "url": best["photo_url"]})
     subject_rows = sorted(subject_rows, key=lambda r: r["rate"], reverse=True)
 
     tree = model.tree_
-    names = {"year": "Upload year", "orientation_portrait": "Portrait or not", "megapixels": "Megapixels",
-             "orientation_landscape": "Landscape or not", "orientation_square": "Square or not"}
-    importance = pd.Series(model.feature_importances_, index=cols)
-    used = importance[importance > 0].sort_values(ascending=False)
-    importance_rows = [{"name": names.get(k, k), "value": float(v)} for k, v in used.items()]
-    importance_rows.append({"name": "Device type", "value": 0.0})
 
     return {
         "n": len(filtered),
         "total": total,
         "median_views": int(filtered["views"].median()),
         "median_downloads": int(filtered["downloads"].median()),
-        "median_rate": float(filtered["download_pct"].median()),
+        "share": float(filtered["popular"].mean() * 100),
         "photos": photos[:40],
         "mosaic": mosaic,
         "rest_top1": int(top1_sum - mosaic_sum),
@@ -176,11 +184,10 @@ def story_data(filtered, total):
         "brands": [{"name": b, "count": int(r["count"]), "type": r["type"]} for b, r in brands.iterrows()],
         "brands_known": int(len(known)),
         "subjects": subject_rows,
-        "overall_rate": float(load_data()["download_pct"].median()),
         "model": {
             "test_acc": test_acc,
             "train_acc": train_acc,
-            "importance": importance_rows,
+            "rows": model_rows,
             "tree": {
                 "left": tree.children_left.tolist(),
                 "right": tree.children_right.tolist(),
@@ -194,9 +201,9 @@ def story_data(filtered, total):
 
 
 df = load_data()
-show_cols = ["photo_id", "year", "brand", "camera_model", "camera_type", "orientation", "subject",
-             "iso", "aperture", "focal_length", "views", "downloads", "download_pct"]
-stats_cols = ["views", "downloads", "download_pct", "iso", "aperture", "focal_length", "megapixels"]
+show_cols = ["photo_id", "year", "brand", "camera_model", "camera_type", "orientation", "subject", "popular",
+             "iso", "aperture", "shutter", "focal_length", "views", "downloads", "per_1000_views"]
+stats_cols = ["views", "downloads", "per_1000_views", "iso", "aperture", "focal_length", "megapixels"]
 
 
 @st.dialog("The data behind the story", width="large")
@@ -265,7 +272,8 @@ story = story.replace("/*DATA*/null", json.dumps(story_data(filtered, len(df))))
 st.iframe(story, height=780)
 
 st.markdown(
-    """<div class="foot">The prediction model always learns from all 25,000 photos.
+    f"""<div class="foot">Percentages are the share of photos downloaded a lot: more downloads per view than the typical photo
+uploaded the same year, so 50% is average. The prediction model always learns from all {train_model()[4]:,} photos with camera settings, whatever the filters.
 Source: <a href="https://github.com/unsplash/datasets" target="_blank">github.com/unsplash/datasets</a></div>""",
     unsafe_allow_html=True,
 )

@@ -40,7 +40,8 @@ h2 { font-size: clamp(30px, 3.4vw, 46px); }
 .copy .live b { color: var(--ink); font-weight: 600; }
 .viz { width: 100%; height: 100%; min-height: 0; position: relative; display: flex; align-items: center; }
 .viz svg { display: block; overflow: visible; }
-svg text { font-family: 'Archivo', system-ui, sans-serif; fill: var(--ink); }
+svg text { font-family: 'Archivo', system-ui, sans-serif; }
+svg text:not([fill]) { fill: var(--ink); }
 .axis text { fill: var(--muted); font-size: 12px; }
 .axis line, .axis path { stroke: var(--line); }
 
@@ -71,7 +72,7 @@ svg text { font-family: 'Archivo', system-ui, sans-serif; fill: var(--ink); }
 .big-num { font-stretch: 118%; font-weight: 700; }
 
 /* model frame */
-.controls { display: flex; flex-direction: column; gap: 22px; }
+.controls { display: flex; flex-direction: column; gap: 14px; }
 .control-label { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
 .choices { display: flex; gap: 8px; flex-wrap: wrap; }
 .choice { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 4px;
@@ -79,7 +80,7 @@ svg text { font-family: 'Archivo', system-ui, sans-serif; fill: var(--ink); }
 .choice[aria-pressed="true"] { border-color: var(--accent); background: rgba(201,106,47,.10); color: var(--accent-dark); }
 .choice .shape { border: 1.5px solid currentColor; display: inline-block; }
 .range-row { display: flex; align-items: center; gap: 14px; }
-.range-row output { font-size: 18px; font-weight: 600; min-width: 44px; font-stretch: 110%; }
+.range-row output { font-size: 18px; font-weight: 600; min-width: 86px; white-space: nowrap; font-stretch: 110%; }
 input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: var(--line);
   border-radius: 2px; outline-offset: 6px; }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
@@ -181,7 +182,7 @@ const DATA = /*DATA*/null;
 const C = { accent: "#C96A2F", accentDark: "#C1622B", ink: "#292929", ink2: "#454140", muted: "#66615C", tert: "#99938B", pale: "#DDD5C8", soft: "#C8C3BC", grid: "#E4DCCF", good: "#5F7A4A", bad: "#A6412B", panel: "#FBF8F3" };
 const deviceColor = { camera: C.ink2, phone: C.accent, drone: C.tert, unknown: C.soft };
 const fmt = d3.format(",");
-const pct = v => v.toFixed(2) + "%";
+const pct = v => Math.round(v) + "%";
 
 const frames = [
   { id: "opening", short: "The question" },
@@ -208,6 +209,11 @@ function showTip(ev, html) {
 function hideTip() { tip.style.opacity = 0; }
 
 /* ---------- frame markup ---------- */
+function oriLine(d) {
+  const la = d.orientation.find(r => r.name === "landscape"), po = d.orientation.find(r => r.name === "portrait");
+  return la && po ? `<b>${pct(la.rate)}</b> of landscape photos are downloaded a lot, against <b>${pct(po.rate)}</b> of portrait ones.`
+    : "Wide photos tend to do better than tall ones.";
+}
 function frameHTML(f) {
   const d = DATA;
   if (f.id === "opening") {
@@ -218,12 +224,14 @@ function frameHTML(f) {
       <div class="q">What makes a photo popular?</div>
       <h1>Not the camera.</h1>
       <p>Across ${fmt(d.total)} Unsplash photos, shots from phones and pro cameras get downloaded at almost the same rate.
-      What changes the odds is how the photo is framed, what is in it, and when it was uploaded.</p>
+      What changes the odds is how the photo is framed and what is in it.</p>
+      <p class="live" style="font-size:16px">Every percentage in this story is the share of photos <b>downloaded a lot</b>: more downloads per view
+      than the typical photo uploaded the same year. Half of all photos make it, so <b>50% is average</b>.</p>
       <div class="facts">
         <div class="fact"><b>${fmt(d.n)}</b><span>photos in your selection</span></div>
         <div class="fact"><b>${fmt(d.median_views)}</b><span>median views</span></div>
         <div class="fact"><b>${fmt(d.median_downloads)}</b><span>median downloads</span></div>
-        <div class="fact"><b>${pct(d.median_rate)}</b><span>of viewers download</span></div>
+        <div class="fact"><b>${pct(d.share)}</b><span>downloaded a lot</span></div>
       </div>
       <button class="begin" data-go="1">Start the roll</button>
       <div class="hint">Move through the frames with the strip above or your arrow keys. The photos behind link to Unsplash.</div>
@@ -231,18 +239,19 @@ function frameHTML(f) {
   }
   if (f.id === "device") {
     const ph = d.device.find(x => x.name === "phone"), ca = d.device.find(x => x.name === "camera");
-    const live = ph && ca ? `In your selection: phones <b>${pct(ph.rate)}</b>, cameras <b>${pct(ca.rate)}</b>.` : `Add phones and cameras in the filters to compare them.`;
+    const live = ph && ca ? `In your selection, <b>${pct(ph.rate)}</b> of phone photos and <b>${pct(ca.rate)}</b> of camera photos were downloaded a lot.` : `Add phones and cameras in the filters to compare them.`;
     return `<div class="copy"><h2>Phones keep up with cameras</h2>
       <p>Of every 1,000 people who view a photo, about 6 download it, whatever took the picture.</p>
       <p>Phones are rare here, only 3% of photos, but the ones on Unsplash do just as well as camera shots.</p>
-      <p class="live">${live} The phone group is small, so a gap this size is noise.</p></div>
+      <p class="live">${live} The phone group is small, so a gap of a few points is noise.</p></div>
       <div class="viz" id="viz-device"></div>`;
   }
   if (f.id === "orientation") {
     return `<div class="copy"><h2>Landscape photos get downloaded more</h2>
-      <p>Horizontal photos convert about a quarter better than vertical ones.</p>
+      <p>${oriLine(d)}</p>
       <p>The likely reason: people download them for website banners, slides and wallpapers, which are all wide.</p>
-      <p class="live">Each frame is drawn in its real shape, with the bar showing the share of viewers who download. Square photos are rare, so their number jumps around with the filters.</p></div>
+      <p class="live">Each frame is drawn in its real shape and shows the % of those photos downloaded a lot.
+      It's a share within each shape, so having more photos doesn't raise it. Square photos are rare, so their number jumps around with the filters.</p></div>
       <div class="viz" id="viz-orientation"></div>`;
   }
   if (f.id === "subject") {
@@ -254,8 +263,8 @@ function frameHTML(f) {
   }
   if (f.id === "end") {
     return `<div class="copy"><h2>What the roll shows</h2>
-      <p>Popularity on Unsplash is not about owning the best camera. It comes from the photo itself: its shape, its subject, and how long it has been online.</p>
-      <p class="live">Numbers on the cards follow your filters. All rates are medians: the share of viewers who download.</p>
+      <p>Popularity on Unsplash is not about owning the best camera or using perfect settings. It comes from the photo itself: its shape and its subject.</p>
+      <p class="live">Numbers on the cards follow your filters. Percentages are the share of photos downloaded a lot, where 50% is average.</p>
       <p class="live">Limits: this is 25,000 photos from one platform, subjects come from AI captions, and the model is right only
       <b>${d.model.test_acc.toFixed(0)}%</b> of the time. Most of what makes a photo loved, the light, the moment, the story, is not in the data.</p>
       <button class="begin" data-go="0" style="margin-top:10px">Back to the start</button></div>
@@ -263,15 +272,15 @@ function frameHTML(f) {
   }
   if (f.id === "share") {
     return `<div class="copy"><h2>A few photos take a big share of the downloads</h2>
-      <p>The typical photo gets a few thousand downloads, a handful get millions. That's why every number here is the median, not the average.</p>
+      <p>The typical photo gets a few thousand downloads, a handful get millions. That's why download counts here use the median, not the average.</p>
       <p class="live">In your selection, the top 1% of photos collect <b>${d.top1.toFixed(0)}%</b> of all downloads. The left column is those photos themselves, each tile sized by its downloads. Hover one to see it, click to open it.</p></div>
       <div class="viz" id="viz-share"></div>`;
   }
   if (f.id === "time") {
     return `<div class="copy"><h2>Older photos had a head start</h2>
       <p>A photo from 2013 has had years to collect downloads, a 2020 photo much less.</p>
-      <p>Comparing raw downloads would reward age, not quality, so this story measures the share of viewers who download instead.</p>
-      <p class="live">Bars show median downloads by upload year. Hover a bar for the number of photos.</p></div>
+      <p>Comparing raw downloads would reward age, not quality, so this story compares each photo only with photos uploaded the same year.</p>
+      <p class="live">Bars show median downloads by upload year. Years with fewer than 20 photos are left out. Hover a bar for the number of photos.</p></div>
       <div class="viz" id="viz-time"></div>`;
   }
   if (f.id === "brands") {
@@ -307,10 +316,9 @@ function frameHTML(f) {
   if (f.id === "model") {
     return `<div class="copy">
       <h2>Take the shot</h2>
-      <p class="lead-sm">A small machine learning model, a decision tree, studied all ${fmt(d.total)} photos.
-      Describe a photo and it estimates the chance that viewers will download it more often than the typical photo
-      (more than ${pct(d.overall_rate)} of viewers).</p>
-      <div class="step"><span class="num">1</span>Describe your photo</div>
+      <p class="lead-sm">A small machine learning model, a decision tree, learned from the ${fmt(d.model.rows)} photos that have their camera settings recorded.
+      Describe your shot and it estimates the chance it gets downloaded a lot: more downloads per view than the typical photo uploaded the same year.</p>
+      <div class="step"><span class="num">1</span>Describe your shot</div>
       <div class="controls">
         <div><div class="control-label">Framing</div><div class="choices" id="c-orient">
           <button class="choice" data-v="landscape"><span class="shape" style="width:24px;height:16px"></span>Landscape</button>
@@ -320,23 +328,25 @@ function frameHTML(f) {
           <button class="choice" data-v="camera">Camera</button>
           <button class="choice" data-v="phone">Phone</button>
           <button class="choice" data-v="drone">Drone</button></div></div>
-        <div><label class="control-label" for="c-year">Upload year</label>
-          <div class="range-row"><input type="range" id="c-year" min="2013" max="2025" step="1" value="2019"><output id="o-year">2019</output></div></div>
-        <div><label class="control-label" for="c-mp">Megapixels</label>
-          <div class="range-row"><input type="range" id="c-mp" min="1" max="100" step="1" value="20"><output id="o-mp">20</output></div></div>
+        <div><label class="control-label" for="c-iso">ISO</label>
+          <div class="range-row"><input type="range" id="c-iso" min="0" max="${M_ISO.length - 1}" step="1"><output id="o-iso"></output></div></div>
+        <div><label class="control-label" for="c-ap">Aperture</label>
+          <div class="range-row"><input type="range" id="c-ap" min="0" max="${M_AP.length - 1}" step="1"><output id="o-ap"></output></div></div>
+        <div><label class="control-label" for="c-sh">Shutter speed</label>
+          <div class="range-row"><input type="range" id="c-sh" min="0" max="${M_SH.length - 1}" step="1"><output id="o-sh"></output></div></div>
       </div>
-      <div class="note">How good is it? It's right <b>${d.model.test_acc.toFixed(1)}%</b> of the time on photos it never saw,
-      against 50% for a coin flip. Weak on purpose: these details explain only a little of what makes a photo popular.</div></div>
+      <div class="note">How good is it? It's right <b>${pct(d.model.test_acc)}</b> of the time on photos it never saw,
+      against 50% for a coin flip. Framing does most of the work. The settings only nudge the answer, because they explain very little of what makes a photo popular.</div></div>
       <div class="viz" style="flex-direction:column;align-items:stretch;justify-content:center">
         <div class="meter-panel">
           <div class="step" style="margin-top:0"><span class="num">2</span>Read the result</div>
           <div class="meter-pct" id="m-pct">0%</div>
-          <div class="meter-sub">chance this photo gets downloaded more often than the typical photo</div>
+          <div class="meter-sub">chance this shot gets downloaded a lot</div>
           <svg id="meter" width="100%" height="70"></svg>
           <div class="step"><span class="num">3</span>See how the model decided</div>
           <ol class="path" id="m-path"></ol>
           <div class="note" id="m-leaf"></div>
-          <div class="note">Try switching the device: the number won't move, because the tree never asks about it.</div>
+          <div class="note" id="m-unused"></div>
         </div>
       </div>`;
   }
@@ -456,7 +466,7 @@ function drawDevice() {
     g.append("text").attr("x", 80).attr("y", 18).attr("font-size", 13).attr("fill", C.muted).text(`${fmt(r.count)} photos`);
     g.append("rect").attr("y", 28).attr("height", Math.min(26, band - 44)).attr("rx", 4).attr("width", 0)
       .attr("fill", deviceColor[r.name])
-      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} of viewers download<br>${fmt(r.count)} photos`))
+      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} downloaded a lot<br>${fmt(r.count)} photos`))
       .on("mouseleave", hideTip)
       .transition().duration(700).attr("width", x(r.rate));
     g.append("text").attr("x", x(r.rate) + 10).attr("y", 28 + Math.min(26, band - 44) / 2 + 6)
@@ -478,14 +488,14 @@ function drawBrands() {
   const x = d3.scaleLinear().domain([0, rows[0].count]).range([0, w - 210]);
   rows.forEach((r, i) => {
     const g = svg.append("g").attr("transform", `translate(0,${i * rowH})`);
-    g.append("text").attr("y", 18).attr("font-size", 15).attr("font-weight", r.type === "phone" ? 650 : 500)
-      .attr("fill", r.type === "phone" ? C.accentDark : C.ink).text(brandName(r.name));
+    g.append("text").attr("y", 18).attr("font-size", 15).attr("font-weight", 500)
+      .attr("fill", C.ink).text(brandName(r.name));
     g.append("rect").attr("x", 110).attr("y", 6).attr("height", 16).attr("rx", 3).attr("width", 0)
       .attr("fill", deviceColor[r.type] || C.soft)
       .on("mousemove", ev => showTip(ev, `<b>${brandName(r.name)}</b><br>${fmt(r.count)} photos, mostly ${r.type}`)).on("mouseleave", hideTip)
       .transition().duration(600).attr("width", Math.max(2, x(r.count)));
     g.append("text").attr("x", 110 + Math.max(2, x(r.count)) + 8).attr("y", 18).attr("font-size", 13).attr("fill", C.muted)
-      .text(`${fmt(r.count)}  (${(r.count / DATA.brands_known * 100).toFixed(1)}%)`);
+      .text(`${fmt(r.count)}  (${pct(r.count / DATA.brands_known * 100)})`);
   });
 }
 
@@ -503,13 +513,13 @@ function drawOrientation() {
     const fw = fh * ratio[r.name]; const best = r.name === "landscape";
     const col = best ? C.accent : C.tert;
     const g = svg.append("g").attr("transform", `translate(${x0},0)`)
-      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} of viewers download<br>${fmt(r.count)} photos`))
+      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} downloaded a lot<br>${fmt(r.count)} photos`))
       .on("mouseleave", hideTip);
     g.append("rect").attr("width", fw).attr("height", fh).attr("fill", best ? "rgba(201,106,47,.08)" : "transparent")
       .attr("stroke", col).attr("stroke-width", best ? 2.5 : 1.5).attr("rx", 3);
     g.append("text").attr("x", fw / 2).attr("y", fh / 2 + 10).attr("text-anchor", "middle").attr("class", "big-num")
       .attr("font-size", Math.max(20, Math.min(40, fw / 3.6))).attr("fill", best ? C.accentDark : C.ink).text(pct(r.rate));
-    const bw = d3.scaleLinear().domain([0, maxRate]).range([0, fw])(r.rate);
+    const bw = d3.scaleLinear().domain([0, 100]).range([0, fw])(r.rate);
     g.append("rect").attr("y", fh + 18).attr("height", 10).attr("rx", 3).attr("width", 0).attr("fill", best ? C.accent : C.pale)
       .transition().duration(700).attr("width", bw);
     g.append("text").attr("y", fh + 52).attr("font-size", 16).attr("font-weight", 600).text(r.name);
@@ -523,17 +533,22 @@ function drawSubject() {
   const rows = DATA.subjects; const live = document.getElementById("subject-live");
   if (!rows.length) { live.textContent = "Too few photos in your selection to compare subjects."; return; }
   const top = rows[0], people = rows.find(r => r.name === "People");
-  live.innerHTML = `In your selection, <b>${top.name.toLowerCase()}</b> photos get <b>${pct(top.rate)}</b>` +
-    (people && people !== top ? `, people photos <b>${pct(people.rate)}</b>.` : ".") +
-    ` The dashed line is the typical photo (${pct(DATA.median_rate)}). Subjects are read from each photo's AI caption, so a few are mislabeled.`;
+  live.innerHTML = `In your selection, <b>${pct(top.rate)}</b> of ${top.name.toLowerCase()} photos` +
+    (people && people !== top ? ` and <b>${pct(people.rate)}</b> of people photos were` : " were") +
+    ` downloaded a lot. The dashed line is your whole selection (${pct(DATA.share)}). Subjects are read from each photo's AI caption, so a few are mislabeled.`;
   const { w } = size(el); const rowH = 44, img = 34, labelW = 170, H = rows.length * rowH + 24;
   const svg = d3.select(el).append("svg").attr("width", w).attr("height", H);
   const x = d3.scaleLinear().domain([0, d3.max(rows, r => r.rate) * 1.08]).range([0, w - labelW - img - 80]);
   const x0 = img + 12 + labelW;
   const color = r => r === top ? C.accent : r.name === "People" ? C.ink2 : C.soft;
+  const mx = x0 + x(DATA.share);
+  svg.append("line").attr("x1", mx).attr("x2", mx).attr("y1", 0).attr("y2", rows.length * rowH - 6)
+    .attr("stroke", C.ink).attr("stroke-dasharray", "4 4").attr("stroke-width", 1.2);
+  svg.append("text").attr("x", mx).attr("y", rows.length * rowH + 12).attr("text-anchor", "middle")
+    .attr("font-size", 12).attr("fill", C.muted).text("all photos");
   rows.forEach((r, i) => {
     const g = svg.append("g").attr("transform", `translate(0,${i * rowH})`)
-      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} of viewers download<br>${fmt(r.count)} photos`))
+      .on("mousemove", ev => showTip(ev, `<b>${r.name}</b><br>${pct(r.rate)} downloaded a lot<br>${fmt(r.count)} photos`))
       .on("mouseleave", hideTip);
     const a = g.append("a").attr("href", r.url).attr("target", "_blank");
     a.append("rect").attr("width", img).attr("height", img).attr("rx", 3).attr("fill", "#E2D9CC");
@@ -546,11 +561,6 @@ function drawSubject() {
       .transition().duration(650).delay(i * 40).attr("width", x(r.rate));
     g.append("text").attr("x", x0 + x(r.rate) + 8).attr("y", 22).attr("font-size", 14).attr("font-weight", 650).text(pct(r.rate));
   });
-  const mx = x0 + x(DATA.median_rate);
-  svg.append("line").attr("x1", mx).attr("x2", mx).attr("y1", 0).attr("y2", rows.length * rowH - 6)
-    .attr("stroke", C.ink).attr("stroke-dasharray", "4 4").attr("stroke-width", 1.2);
-  svg.append("text").attr("x", mx).attr("y", rows.length * rowH + 12).attr("text-anchor", "middle")
-    .attr("font-size", 12).attr("fill", C.muted).text("typical photo");
 }
 
 function drawFindings() {
@@ -567,15 +577,15 @@ function drawFindings() {
     { k: "The camera doesn't decide", frame: "device", big: vs(ph, ca, "phones", "cameras"),
       p: "Phones and pro cameras convert viewers into downloads at about the same rate." },
     { k: "Shoot wide", frame: "orientation", big: vs(la, po, "landscape", "portrait"),
-      p: la && po ? `Landscape photos get downloaded about ${Math.round((la.rate / po.rate - 1) * 100)}% more often.` : "Wide photos fit banners, slides and wallpapers." },
+      p: "Wide photos fit banners, slides and wallpapers, so more of them get downloaded a lot." },
     { k: "Look up", frame: "subject", big: top && people && top !== people ? vs(top, people, top.name.toLowerCase(), "people") : `<small>Not enough photos</small>`,
-      p: "Skies and landscapes work as backgrounds for anything, portraits of people less so." },
+      p: "Skies work as backgrounds for anything, photos of people less so." },
     { k: "A few photos win big", frame: "share", big: `${d.top1.toFixed(0)}% <small>of downloads go to the top 1%</small>`,
       p: "So the typical photo is the median, not the average." },
     { k: "Age inflates downloads", frame: "time", big: peak && last ? `${fmt(Math.round(peak.median))} <small>(${peak.year}) vs</small> ${fmt(Math.round(last.median))} <small>(${last.year})</small>` : "",
-      p: "Older photos had years to collect downloads, so fair comparisons use the download rate." },
+      p: "Older photos had years to collect downloads, so each photo is compared only with its own upload year." },
     { k: "The model backs it up", frame: "model", big: `${d.model.test_acc.toFixed(0)}% <small>right, vs 50% for a coin flip</small>`,
-      p: "It splits on upload year and portrait framing, and never asks about the device." },
+      p: "Its first question is framing. ISO, aperture and shutter only nudge the answer." },
   ];
   el.innerHTML = cards.map((c, i) => `<div class="finding"><div class="k"><span class="num">${i + 1}</span>${c.k}</div>
     <div class="big">${c.big}</div><p>${c.p}</p><button class="go" data-go="${at(c.frame)}">See frame ${String(at(c.frame) + 1).padStart(2, "0")} &#8250;</button></div>`).join("");
@@ -619,7 +629,7 @@ function drawShare() {
       });
     } else {
       g.append("rect").attr("width", gw).attr("height", H).attr("rx", 2).attr("fill", gr.color)
-        .on("mousemove", ev => showTip(ev, `<b>${gr.label}</b><br>${share.toFixed(1)}% of all downloads`)).on("mouseleave", hideTip);
+        .on("mousemove", ev => showTip(ev, `<b>${gr.label}</b><br>${pct(share)} of all downloads`)).on("mouseleave", hideTip);
     }
     g.append("rect").attr("y", H + 10).attr("width", gw).attr("height", 3).attr("fill", gr.color);
     g.append("text").attr("y", H + 36).attr("font-size", 22).attr("font-weight", 700).attr("font-stretch", "115%").text(share.toFixed(0) + "%");
@@ -639,7 +649,7 @@ function drawTime() {
     .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format("~s")).tickSize(-(w - m.l - m.r)))
     .call(g => g.select(".domain").remove()).call(g => g.selectAll("line").attr("stroke", C.grid));
   svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`)
-    .call(d3.axisBottom(x).tickSize(0).tickFormat(v => (rows.length > 9 && v % 2) ? "" : v))
+    .call(d3.axisBottom(x).tickSize(0).tickFormat(v => (rows.length > 14 && v % 2) ? "" : v))
     .call(g => g.select(".domain").remove()).selectAll("text").attr("dy", 14);
   const top = d3.max(rows, r => r.median);
   svg.selectAll(".bar").data(rows).join("rect").attr("class", "bar").attr("x", r => x(r.year)).attr("width", x.bandwidth())
@@ -678,19 +688,24 @@ function drawSettings() {
 }
 
 /* ---------- model: the tree runs in the browser ---------- */
-const state = { orientation: "landscape", device: "camera", year: 2019, mp: 20 };
+const M_ISO = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600];
+const M_AP = [1.4, 1.8, 2, 2.8, 4, 5.6, 8, 11, 16, 22];
+const M_SH = [1 / 4000, 1 / 2000, 1 / 1000, 1 / 500, 1 / 250, 1 / 125, 1 / 60, 1 / 30, 1 / 15, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 15, 30];
+// starts on the most common Unsplash shot: landscape, camera, ISO 100, f/2.8, 1/250 s
+const state = { orientation: "landscape", device: "camera", iso: 1, ap: 3, sh: 4 };
 function ask(f, th, v, left) {
   if (f.startsWith("orientation_")) return { q: `Is it ${f.slice(12)}?`, yes: v > 0.5 };
   if (f.startsWith("camera_type_")) return { q: `Taken with a ${f.slice(12)}?`, yes: v > 0.5 };
-  if (f === "year") return { q: `Uploaded in ${Math.floor(th)} or earlier?`, yes: left };
-  if (f === "megapixels") return { q: `Smaller than ${th.toFixed(1)} megapixels?`, yes: left };
+  if (f === "iso") return { q: `ISO ${Math.round(th)} or lower?`, yes: left };
+  if (f === "aperture") return { q: `Aperture f/${+th.toFixed(1)} or lower?`, yes: left };
+  if (f === "shutter") return { q: th < 1 ? `Shutter 1/${Math.round(1 / th)} s or faster?` : `Shutter ${+th.toFixed(1)} s or shorter?`, yes: left };
   return { q: `${f} at most ${th}?`, yes: left };
 }
 function predict() {
   const t = DATA.model.tree;
-  const x = { year: state.year, megapixels: state.mp };
+  const x = { iso: M_ISO[state.iso], aperture: M_AP[state.ap], shutter: M_SH[state.sh] };
   ["landscape", "portrait", "square"].forEach(o => x["orientation_" + o] = state.orientation === o ? 1 : 0);
-  ["camera", "drone", "phone", "unknown"].forEach(c => x["camera_type_" + c] = state.device === c ? 1 : 0);
+  ["camera", "drone", "phone"].forEach(c => x["camera_type_" + c] = state.device === c ? 1 : 0);
   let n = 0; const steps = [];
   while (t.left[n] !== -1) {
     const v = x[t.feature[n]] ?? 0, left = v <= t.threshold[n];
@@ -722,7 +737,12 @@ function updateMeter() {
   document.getElementById("m-path").innerHTML = r.steps.map(s =>
     `<li><span class="q">${s.q}</span><span class="a ${s.yes ? "yes" : "no"}">${s.yes ? "Yes" : "No"}</span></li>`).join("");
   document.getElementById("m-leaf").innerHTML = `So the model looks at the <b>${fmt(r.samples)}</b> training photos that gave the same answers:
-    <b>${Math.round(p)}%</b> of them had a higher than typical download rate.`;
+    <b>${Math.round(p)}%</b> of them were downloaded a lot.`;
+  const used = DATA.model.tree.feature.filter(Boolean).join(" ");
+  const unused = [["framing", "orientation_"], ["device", "camera_type_"], ["ISO", "iso"], ["aperture", "aperture"], ["shutter speed", "shutter"]]
+    .filter(([, key]) => !used.includes(key)).map(([name]) => name);
+  document.getElementById("m-unused").textContent = unused.length
+    ? `The tree never asks about ${unused.join(" or ")}, so changing it won't move the number.` : "";
   pctEl.textContent = Math.round(p) + "%";
   pctEl.style.color = p >= 50 ? C.good : C.bad;
   d3.select("#needle").transition().duration(500).attr("transform", `translate(${meterX(p)},0)`);
@@ -736,9 +756,15 @@ function wireModel() {
     });
   };
   set("c-orient", "orientation"); set("c-device", "device");
-  const yr = document.getElementById("c-year"), mp = document.getElementById("c-mp");
-  yr.oninput = () => { state.year = +yr.value; document.getElementById("o-year").textContent = yr.value; updateMeter(); };
-  mp.oninput = () => { state.mp = +mp.value; document.getElementById("o-mp").textContent = mp.value; updateMeter(); };
+  const slider = (id, key, list, label) => {
+    const el = document.getElementById("c-" + id), out = document.getElementById("o-" + id);
+    const show = () => { out.textContent = label(list[state[key]]); };
+    el.value = state[key]; show();
+    el.oninput = () => { state[key] = +el.value; show(); updateMeter(); };
+  };
+  slider("iso", "iso", M_ISO, v => v);
+  slider("ap", "ap", M_AP, v => "f/" + v);
+  slider("sh", "sh", M_SH, shLabel);
 }
 
 /* ---------- navigation ---------- */
